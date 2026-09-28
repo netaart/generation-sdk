@@ -69,7 +69,6 @@ describe("config", () => {
     expect(byCategory.audio.sort()).toEqual([...expected.audio]);
     for (const model of [
       "higgs-tts",
-      "qwen-tts",
       "qwen-audio-3.0-tts-plus",
       "qwen-audio-3.0-tts-flash",
       "suno_cover_chirp_v5",
@@ -216,7 +215,7 @@ describe("config", () => {
 
   it("publishes agent-discoverable audio speech declarations", () => {
     const client = createGenerationClient();
-    const qwenModels = ["qwen-tts", "qwen-audio-3.0-tts-plus", "qwen-audio-3.0-tts-flash"];
+    const qwenModels = ["qwen-audio-3.0-tts-plus", "qwen-audio-3.0-tts-flash"];
 
     for (const model of qwenModels) {
       const declaration = client.getModel(model);
@@ -235,14 +234,6 @@ describe("config", () => {
       expect(declaration?.examples?.map((example) => example.title)).toEqual(["Voice design", "Voice clone"]);
       expect(JSON.parse(client.stringifyModelConfig(model, { format: "json" }))).toEqual(declaration);
     }
-
-    const qwen = client.getModel("qwen-tts");
-    expect(qwen?.description).toBe(
-      "Modes: voice_prompt design OR one-reference clone. Default: unspecified Qwen design. Text: any length. Conflict: ask user; never combine/reinterpret. Dependency: clone prior generated audio.",
-    );
-    expect(qwen?.content.input.find((input) => input.type === "text")?.description).not.toContain(
-      "Unicode code points",
-    );
 
     const plus = client.getModel("qwen-audio-3.0-tts-plus");
     expect(plus?.description).toBe(
@@ -517,7 +508,7 @@ describe("config", () => {
 
   it("does not publish the retired Qwen preview field", async () => {
     const client = createGenerationClient({ apiKey: "test" });
-    for (const model of ["qwen-tts", "qwen-audio-3.0-tts-plus", "qwen-audio-3.0-tts-flash"]) {
+    for (const model of ["qwen-audio-3.0-tts-plus", "qwen-audio-3.0-tts-flash"]) {
       expect(client.stringifyModelConfig(model)).not.toContain("preview_text");
     }
     expect(await readFile(join(process.cwd(), "README.md"), "utf8")).not.toContain("preview_text");

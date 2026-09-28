@@ -777,11 +777,6 @@ function qwenTtsModel(
 
 const audioSpeechModels = [
   qwenTtsModel(
-    "qwen-tts",
-    "Qwen TTS",
-    "Modes: voice_prompt design OR one-reference clone. Default: unspecified Qwen design. Text: any length. Conflict: ask user; never combine/reinterpret. Dependency: clone prior generated audio.",
-  ),
-  qwenTtsModel(
     "qwen-audio-3.0-tts-plus",
     "Qwen Audio 3.0 TTS Plus",
     "Modes: voice_prompt design OR one-reference clone. Text: >=15 Unicode code points. Conflict: ask user; never combine/reinterpret. Dependency: clone prior generated audio.",
