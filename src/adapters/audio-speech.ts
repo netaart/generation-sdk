@@ -8,7 +8,7 @@ import type {
 } from "../types.js";
 
 const REQUEST_TIMEOUT_MS = 210_000;
-const QWEN_MODELS = new Set(["qwen-audio-3.0-tts-plus", "qwen-audio-3.0-tts-flash"]);
+const QWEN_MODELS = new Set(["qwen-audio-3.1-tts-flash"]);
 const HIGGS_MODEL = "higgs-tts";
 
 type TextBlock = Extract<GenerationContentBlock, { type: "text" }>;

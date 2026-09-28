@@ -777,14 +777,8 @@ function qwenTtsModel(
 
 const audioSpeechModels = [
   qwenTtsModel(
-    "qwen-audio-3.0-tts-plus",
-    "Qwen Audio 3.0 TTS Plus",
-    "Modes: voice_prompt design OR one-reference clone. Text: >=15 Unicode code points. Conflict: ask user; never combine/reinterpret. Dependency: clone prior generated audio.",
-    { minimumTextCodePoints: 15 },
-  ),
-  qwenTtsModel(
-    "qwen-audio-3.0-tts-flash",
-    "Qwen Audio 3.0 TTS Flash",
+    "qwen-audio-3.1-tts-flash",
+    "Qwen Audio 3.1 TTS Flash",
     "Modes: voice_prompt design OR one-reference clone. Text: >=15 Unicode code points. Conflict: ask user; never combine/reinterpret. Dependency: clone prior generated audio.",
     { minimumTextCodePoints: 15 },
   ),

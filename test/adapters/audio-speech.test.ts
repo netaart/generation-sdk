@@ -42,7 +42,7 @@ function audio(url = REFERENCE_URL, meta?: Record<string, unknown>): GenerationC
 
 function qwenDesignRequest(overrides: Partial<GenerateRequest> = {}): GenerateRequest {
   return {
-    model: "qwen-audio-3.0-tts-plus",
+    model: "qwen-audio-3.1-tts-flash",
     content: [{ type: "text", text: QWEN_TEXT }],
     meta: { voice_prompt: "沉稳清晰的男性播音员声音" },
     ...overrides,
@@ -74,7 +74,7 @@ describe("openai.audioSpeech adapter requests", () => {
     const voicePrompt = "  沉稳清晰的声音。\n";
 
     const output = await client.generate({
-      model: "qwen-audio-3.0-tts-plus",
+      model: "qwen-audio-3.1-tts-flash",
       content: [{ type: "text", text: input }],
       meta: { voice_prompt: voicePrompt },
     });
@@ -86,7 +86,7 @@ describe("openai.audioSpeech adapter requests", () => {
       new Headers({ Authorization: "Bearer secret-key", "Content-Type": "application/json" }),
     );
     expect(requestBody(calls[0])).toEqual({
-      model: "qwen-audio-3.0-tts-plus",
+      model: "qwen-audio-3.1-tts-flash",
       input,
       metadata: { voice_prompt: voicePrompt },
     });
@@ -102,12 +102,12 @@ describe("openai.audioSpeech adapter requests", () => {
   it("maps Qwen reference audio and trims only its URL", async () => {
     const { client, calls } = recordingClient();
     await client.generate({
-      model: "qwen-audio-3.0-tts-plus",
+      model: "qwen-audio-3.1-tts-flash",
       content: [{ type: "text", text: QWEN_TEXT }, audio(`  ${REFERENCE_URL}\n`)],
     });
 
     expect(requestBody(calls[0])).toEqual({
-      model: "qwen-audio-3.0-tts-plus",
+      model: "qwen-audio-3.1-tts-flash",
       input: QWEN_TEXT,
       ref_audio: REFERENCE_URL,
     });
@@ -122,7 +122,7 @@ describe("openai.audioSpeech adapter requests", () => {
     );
 
     expect(requestBody(calls[0])).toEqual({
-      model: "qwen-audio-3.0-tts-plus",
+      model: "qwen-audio-3.1-tts-flash",
       input: QWEN_TEXT,
       metadata: { voice_prompt: "清晰女声" },
     });
@@ -199,7 +199,7 @@ describe("openai.audioSpeech adapter validation", () => {
     const client = createGenerationClient({ apiKey: "key" });
     expect(() =>
       client.validate({
-        model: "qwen-audio-3.0-tts-plus",
+        model: "qwen-audio-3.1-tts-flash",
         content: [{ type: "text", text: QWEN_TEXT }],
         meta: { preview_text: "已经失效的文本来源" },
       }),
@@ -234,16 +234,16 @@ describe("openai.audioSpeech adapter validation", () => {
   });
 
   it("enforces Qwen reference limits inside the adapter hook when a declaration is overridden", () => {
-    const declaration = getBuiltinGenerationModel("qwen-audio-3.0-tts-plus");
-    if (!declaration) throw new Error("qwen-audio-3.0-tts-plus declaration is unavailable");
+    const declaration = getBuiltinGenerationModel("qwen-audio-3.1-tts-flash");
+    if (!declaration) throw new Error("qwen-audio-3.1-tts-flash declaration is unavailable");
     const audioSpec = declaration.content.input.find((spec) => spec.type === "audio");
-    if (!audioSpec) throw new Error("qwen-audio-3.0-tts-plus audio spec is unavailable");
+    if (!audioSpec) throw new Error("qwen-audio-3.1-tts-flash audio spec is unavailable");
     audioSpec.max = 2;
     const client = createGenerationClient({ models: [declaration], includeBuiltinModels: false, apiKey: "key" });
 
     expect(() =>
       client.validate({
-        model: "qwen-audio-3.0-tts-plus",
+        model: "qwen-audio-3.1-tts-flash",
         content: [{ type: "text", text: QWEN_TEXT }, audio(), audio(SECOND_REFERENCE_URL)],
       }),
     ).toThrow("supports at most one reference audio");
@@ -270,23 +270,25 @@ describe("openai.audioSpeech adapter validation", () => {
     ).toThrow("supports at most 16 references");
   });
 
-  it.each([
-    { model: "qwen-audio-3.0-tts-plus", text: "a".repeat(14) },
-    { model: "qwen-audio-3.0-tts-flash", text: "😀".repeat(14) },
-  ])("rejects $model input below 15 Unicode code points", ({ model, text }) => {
-    const client = createGenerationClient({ apiKey: "key" });
-    expect(() => client.validate({ model, content: [{ type: "text", text }, audio()] })).toThrow(
-      "requires input of at least 15 Unicode code points",
-    );
-  });
+  it.each([{ text: "a".repeat(14) }, { text: "😀".repeat(14) }])(
+    "rejects qwen-audio-3.1-tts-flash input below 15 Unicode code points ($text)",
+    ({ text }) => {
+      const client = createGenerationClient({ apiKey: "key" });
+      expect(() =>
+        client.validate({ model: "qwen-audio-3.1-tts-flash", content: [{ type: "text", text }, audio()] }),
+      ).toThrow("requires input of at least 15 Unicode code points");
+    },
+  );
 
-  it.each([
-    { model: "qwen-audio-3.0-tts-plus", text: "a".repeat(15) },
-    { model: "qwen-audio-3.0-tts-flash", text: ` ${"😀".repeat(15)} ` },
-  ])("accepts the $model input boundary", ({ model, text }) => {
-    const client = createGenerationClient({ apiKey: "key" });
-    expect(() => client.validate({ model, content: [{ type: "text", text }, audio()] })).not.toThrow();
-  });
+  it.each([{ text: "a".repeat(15) }, { text: ` ${"😀".repeat(15)} ` }])(
+    "accepts the qwen-audio-3.1-tts-flash input boundary ($text)",
+    ({ text }) => {
+      const client = createGenerationClient({ apiKey: "key" });
+      expect(() =>
+        client.validate({ model: "qwen-audio-3.1-tts-flash", content: [{ type: "text", text }, audio()] }),
+      ).not.toThrow();
+    },
+  );
 
   it.each<{ label: string; request: GenerateRequest }>([
     { label: "request typo", request: qwenDesignRequest({ meta: { voice_promt: "拼错" } }) },

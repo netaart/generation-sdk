@@ -62,7 +62,7 @@ Agents and external tools should inspect a model declaration before constructing
 import { createGenerationClient } from "@neta-art/generation";
 
 const discoveryClient = createGenerationClient();
-const declaration = discoveryClient.getModel("qwen-tts");
+const declaration = discoveryClient.getModel("qwen-audio-3.1-tts-flash");
 if (!declaration) throw new Error("Model is unavailable");
 
 console.log(discoveryClient.stringifyModelConfig(declaration.model, { format: "json" }));
@@ -84,7 +84,7 @@ The same declarations can be exported as YAML through the existing CLI:
 
 ```bash
 neta-generation models list
-neta-generation models export qwen-tts --out ./qwen-tts.yaml
+neta-generation models export qwen-audio-3.1-tts-flash --out ./qwen-audio-3.1-tts-flash.yaml
 neta-generation models export-all --out ./models
 ```
 
@@ -170,9 +170,7 @@ const client = createGenerationClient({
 - `gpt-image-2`
 - `z-image-turbo`
 - `qwen-image-edit`
-- `qwen-tts`
-- `qwen-audio-3.0-tts-plus`
-- `qwen-audio-3.0-tts-flash`
+- `qwen-audio-3.1-tts-flash`
 - `higgs-tts`
 - `gemini-3.1-flash-image-preview`
 - `kling-text-to-video`
@@ -268,12 +266,12 @@ Each TTS request accepts exactly one non-empty text block and returns one URL au
 
 | Requirement | Model choice |
 | --- | --- |
-| Create a voice from a text-only description, without reference audio | Use an explicitly requested Qwen variant; otherwise use `qwen-tts` as the deterministic default |
+| Create a voice from a text-only description, without reference audio | `qwen-audio-3.1-tts-flash` |
 | Maximize fidelity to one reference voice | `higgs-tts` |
 | Blend 2-16 weighted reference voices | `higgs-tts` |
 | Use a default voice, including a delegated choice expressed only as any, random, suitable, or natural | `higgs-tts` |
 
-- Qwen: `voice_prompt` design OR one-reference clone; `qwen-tts` is the unspecified-design default and accepts any text length; Plus / Flash require at least 15 Unicode code points.
+- Qwen: `voice_prompt` design OR one-reference clone via `qwen-audio-3.1-tts-flash`; requires at least 15 Unicode code points.
 - Higgs: delegated default voice, high-fidelity one-reference clone, or weighted 2-16-reference blend.
 - Conflict: reference + redesign requires user choice before generation.
 - Blend: all references, full text, one request.
@@ -282,15 +280,15 @@ Each TTS request accepts exactly one non-empty text block and returns one URL au
 
 ```ts
 await client.generate({
-  model: "qwen-tts",
-  content: [{ type: "text", text: "欢迎使用语音合成功能。" }],
+  model: "qwen-audio-3.1-tts-flash",
+  content: [{ type: "text", text: "欢迎使用语音合成功能，这是一段示例文本。" }],
   meta: {
     voice_prompt: "一位沉稳自然的中文播音员，吐字清晰，语速适中",
   },
 });
 
 await client.generate({
-  model: "qwen-audio-3.0-tts-flash",
+  model: "qwen-audio-3.1-tts-flash",
   content: [
     { type: "text", text: "这是一段长度足够并且表达清晰自然的语音合成文本。" },
     { type: "audio", source: { type: "url", url: "https://example.com/reference.mp3" } },
