@@ -8,9 +8,7 @@ import type {
 } from "../types.js";
 
 const REQUEST_TIMEOUT_MS = 210_000;
-// background's qwen_tts_actor rewrites every qwen*-branded target_model to this
-// one id -- adding another Qwen tier here requires changing that rule first,
-// or it silently gets collapsed onto this model regardless of what's declared.
+// background's qwen_tts_actor rewrites every qwen* target_model onto this id.
 const QWEN_MODEL = "qwen-audio-3.1-tts-flash";
 const HIGGS_MODEL = "higgs-tts";
 
