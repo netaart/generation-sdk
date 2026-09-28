@@ -274,7 +274,7 @@ describe("config", () => {
     expect(readme).toContain("Conflict: reference + redesign requires user choice before generation");
     expect(readme).toContain("Blend: all references, full text, one request");
     expect(readme).toContain("Dependency: clone prior generated audio");
-    expect(readme).toContain("Ranking: no declared Qwen quality, latency, or cost order");
+    expect(readme).toContain("Short text: input under 15 Unicode code points has no voice-design path on Qwen");
     expect(readme).not.toMatch(/quality prioritized over latency|latency prioritized over maximum quality/);
   });
 

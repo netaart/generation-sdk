@@ -276,7 +276,7 @@ Each TTS request accepts exactly one non-empty text block and returns one URL au
 - Conflict: reference + redesign requires user choice before generation.
 - Blend: all references, full text, one request.
 - Dependency: clone prior generated audio.
-- Ranking: no declared Qwen quality, latency, or cost order.
+- Short text: input under 15 Unicode code points has no voice-design path on Qwen; ask the user to lengthen it, or use `higgs-tts` with a default/reference voice instead.
 
 ```ts
 await client.generate({
