@@ -461,7 +461,7 @@ describe("config", () => {
 
     expect(client.getModel("seedance-2-0")?.parameters?.resolution).toMatchObject({
       default: "1080p",
-      enum: ["480p", "720p", "1080p", "2K"],
+      enum: ["480p", "720p", "1080p", "4k"],
     });
     expect(client.getModel("seedance-2-0-fast")?.parameters?.resolution).toMatchObject({
       default: "720p",
@@ -500,9 +500,21 @@ describe("config", () => {
       client.validate({
         model: "seedance-2-5",
         content: [{ type: "text", text: "a quick motion study" }],
-        parameters: { resolution: "2K" },
+        parameters: { resolution: "4k" },
       }),
     ).toThrow("Parameter resolution must be one of: 480p, 720p, 1080p");
+    expect(() =>
+      client.validate({
+        model: "seedance-2-0",
+        content: [{ type: "text", text: "a quick motion study" }],
+        parameters: { resolution: "2K" },
+      }),
+    ).toThrow("Parameter resolution must be one of: 480p, 720p, 1080p, 4k");
+    for (const model of ["seedance-2-0", "seedance-2-0-fast", "seedance-2-5"]) {
+      expect(client.getModel(model)?.parameters?.ratio).toMatchObject({
+        enum: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9", "adaptive"],
+      });
+    }
   });
 
   it("publishes the supported NoobXL image sizes", () => {
