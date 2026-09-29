@@ -270,25 +270,25 @@ describe("openai.audioSpeech adapter validation", () => {
     ).toThrow("supports at most 16 references");
   });
 
-  it.each([{ text: "a".repeat(14) }, { text: "😀".repeat(14) }])(
-    "rejects qwen-audio-3.1-tts-flash input below 15 Unicode code points ($text)",
-    ({ text }) => {
-      const client = createGenerationClient({ apiKey: "key" });
-      expect(() =>
-        client.validate({ model: "qwen-audio-3.1-tts-flash", content: [{ type: "text", text }, audio()] }),
-      ).toThrow("requires input of at least 15 Unicode code points");
-    },
-  );
+  it.each([
+    { text: "a".repeat(14) },
+    { text: "😀".repeat(14) },
+  ])("rejects qwen-audio-3.1-tts-flash input below 15 Unicode code points ($text)", ({ text }) => {
+    const client = createGenerationClient({ apiKey: "key" });
+    expect(() =>
+      client.validate({ model: "qwen-audio-3.1-tts-flash", content: [{ type: "text", text }, audio()] }),
+    ).toThrow("requires input of at least 15 Unicode code points");
+  });
 
-  it.each([{ text: "a".repeat(15) }, { text: ` ${"😀".repeat(15)} ` }])(
-    "accepts the qwen-audio-3.1-tts-flash input boundary ($text)",
-    ({ text }) => {
-      const client = createGenerationClient({ apiKey: "key" });
-      expect(() =>
-        client.validate({ model: "qwen-audio-3.1-tts-flash", content: [{ type: "text", text }, audio()] }),
-      ).not.toThrow();
-    },
-  );
+  it.each([
+    { text: "a".repeat(15) },
+    { text: ` ${"😀".repeat(15)} ` },
+  ])("accepts the qwen-audio-3.1-tts-flash input boundary ($text)", ({ text }) => {
+    const client = createGenerationClient({ apiKey: "key" });
+    expect(() =>
+      client.validate({ model: "qwen-audio-3.1-tts-flash", content: [{ type: "text", text }, audio()] }),
+    ).not.toThrow();
+  });
 
   it.each<{ label: string; request: GenerateRequest }>([
     { label: "request typo", request: qwenDesignRequest({ meta: { voice_promt: "拼错" } }) },
