@@ -8,8 +8,7 @@ import type {
 } from "../types.js";
 
 const REQUEST_TIMEOUT_MS = 210_000;
-const QWEN_MODELS = new Set(["qwen-tts", "qwen-audio-3.0-tts-plus", "qwen-audio-3.0-tts-flash"]);
-const QWEN_AUDIO_3_MODELS = new Set(["qwen-audio-3.0-tts-plus", "qwen-audio-3.0-tts-flash"]);
+const QWEN_MODEL = "qwen-audio-3.1-tts-flash";
 const HIGGS_MODEL = "higgs-tts";
 
 type TextBlock = Extract<GenerationContentBlock, { type: "text" }>;
@@ -92,7 +91,7 @@ function validateQwen(input: ResolvedGenerationRequest, text: TextBlock, audio: 
     );
   }
 
-  if (QWEN_AUDIO_3_MODELS.has(input.declaration.model) && Array.from(text.text.trim()).length < 15) {
+  if (Array.from(text.text.trim()).length < 15) {
     throw new GenerationValidationError(`${input.declaration.model} requires input of at least 15 Unicode code points`);
   }
 }
@@ -124,7 +123,7 @@ function validateHiggs(input: ResolvedGenerationRequest, text: TextBlock, audio:
 
 function validateAudioSpeechRequest(input: ResolvedGenerationRequest): void {
   const { text, audio } = validateCommonContent(input);
-  if (QWEN_MODELS.has(input.declaration.model)) {
+  if (input.declaration.model === QWEN_MODEL) {
     validateQwen(input, text, audio);
     return;
   }
@@ -148,7 +147,7 @@ function buildPayload(input: ResolvedGenerationRequest): Record<string, unknown>
     input: text.text,
   };
 
-  if (QWEN_MODELS.has(input.declaration.model)) {
+  if (input.declaration.model === QWEN_MODEL) {
     if (audio[0]?.source.type === "url") payload.ref_audio = audio[0].source.url.trim();
     else payload.metadata = { voice_prompt: input.meta.voice_prompt };
     return payload;

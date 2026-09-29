@@ -1,7 +1,8 @@
 schema: neta.generation.model.v1
-model: qwen-audio-3.0-tts-flash
-title: Qwen Audio 3.0 TTS Flash
-description: 'Modes: voice_prompt design OR one-reference clone. Text: >=15 Unicode code points. Conflict: ask user; never combine/reinterpret. Dependency: clone prior generated audio.'
+model: qwen-audio-3.1-tts-flash
+title: Qwen Audio 3.1 TTS Flash
+description: "Modes: voice_prompt design OR one-reference clone. Text: >=15 Unicode code points. Conflict: ask user;
+  never combine/reinterpret. Dependency: clone prior generated audio."
 adapter:
   type: openai.audioSpeech
 content:
@@ -16,17 +17,17 @@ content:
       max: 1
       sources:
         - url
-      description: 'Clone: one URL; no voice_prompt. Dependency: use prior generated audio.'
+      description: "Clone: one URL; no voice_prompt. Dependency: use prior generated audio."
 meta:
   fields:
     voice_prompt:
       type: string
       optional: true
-      description: 'Design: custom voice text; no reference audio.'
+      description: "Design: custom voice text; no reference audio."
 examples:
   - title: Voice design
     request:
-      model: qwen-audio-3.0-tts-flash
+      model: qwen-audio-3.1-tts-flash
       content:
         - type: text
           text: 这是一段长度足够并且表达清晰自然的语音合成测试文本。
@@ -34,7 +35,7 @@ examples:
         voice_prompt: 一位沉稳干练的男性播音员声音，吐字清晰有力
   - title: Voice clone
     request:
-      model: qwen-audio-3.0-tts-flash
+      model: qwen-audio-3.1-tts-flash
       content:
         - type: text
           text: 这是一段长度足够并且表达清晰自然的语音合成测试文本。

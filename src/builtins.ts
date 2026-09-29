@@ -708,20 +708,13 @@ function geminiImageModel(
   };
 }
 
-function qwenTtsModel(
-  model: string,
-  title: string,
-  description: string,
-  options: { minimumTextCodePoints?: number } = {},
-): GenerationModelDeclaration {
-  const text = options.minimumTextCodePoints
-    ? "这是一段长度足够并且表达清晰自然的语音合成测试文本。"
-    : "这是一次清晰自然的语音合成测试。";
-  return {
+const audioSpeechModels = [
+  {
     schema: MODEL_SCHEMA,
-    model,
-    title,
-    description,
+    model: "qwen-audio-3.1-tts-flash",
+    title: "Qwen Audio 3.1 TTS Flash",
+    description:
+      "Modes: voice_prompt design OR one-reference clone. Text: >=15 Unicode code points. Conflict: ask user; never combine/reinterpret. Dependency: clone prior generated audio.",
     adapter: { type: "openai.audioSpeech" },
     content: {
       input: [
@@ -730,9 +723,7 @@ function qwenTtsModel(
           required: true,
           min: 1,
           max: 1,
-          description: options.minimumTextCodePoints
-            ? `Exactly one non-empty text block to speak, with at least ${options.minimumTextCodePoints} Unicode code points.`
-            : "Exactly one non-empty text block to speak.",
+          description: "Exactly one non-empty text block to speak, with at least 15 Unicode code points.",
         },
         {
           type: "audio",
@@ -756,43 +747,23 @@ function qwenTtsModel(
       {
         title: "Voice design",
         request: {
-          model,
-          content: [{ type: "text", text }],
+          model: "qwen-audio-3.1-tts-flash",
+          content: [{ type: "text", text: "这是一段长度足够并且表达清晰自然的语音合成测试文本。" }],
           meta: { voice_prompt: "一位沉稳干练的男性播音员声音，吐字清晰有力" },
         },
       },
       {
         title: "Voice clone",
         request: {
-          model,
+          model: "qwen-audio-3.1-tts-flash",
           content: [
-            { type: "text", text },
+            { type: "text", text: "这是一段长度足够并且表达清晰自然的语音合成测试文本。" },
             { type: "audio", source: { type: "url", url: "https://example.com/reference.mp3" } },
           ],
         },
       },
     ],
-  };
-}
-
-const audioSpeechModels = [
-  qwenTtsModel(
-    "qwen-tts",
-    "Qwen TTS",
-    "Modes: voice_prompt design OR one-reference clone. Default: unspecified Qwen design. Text: any length. Conflict: ask user; never combine/reinterpret. Dependency: clone prior generated audio.",
-  ),
-  qwenTtsModel(
-    "qwen-audio-3.0-tts-plus",
-    "Qwen Audio 3.0 TTS Plus",
-    "Modes: voice_prompt design OR one-reference clone. Text: >=15 Unicode code points. Conflict: ask user; never combine/reinterpret. Dependency: clone prior generated audio.",
-    { minimumTextCodePoints: 15 },
-  ),
-  qwenTtsModel(
-    "qwen-audio-3.0-tts-flash",
-    "Qwen Audio 3.0 TTS Flash",
-    "Modes: voice_prompt design OR one-reference clone. Text: >=15 Unicode code points. Conflict: ask user; never combine/reinterpret. Dependency: clone prior generated audio.",
-    { minimumTextCodePoints: 15 },
-  ),
+  },
   {
     schema: MODEL_SCHEMA,
     model: "higgs-tts",

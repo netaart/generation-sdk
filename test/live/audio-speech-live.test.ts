@@ -49,30 +49,16 @@ liveDescribe("audio speech live router smoke", () => {
       {
         name: "qwen voice design",
         request: {
-          model: "qwen-tts",
-          content: [text(`这是基础模型设计音色端到端测试，运行编号${runId}。`)],
+          model: "qwen-audio-3.1-tts-flash",
+          content: [text(`这是设计音色端到端测试，运行编号${runId}。`)],
           meta: { voice_prompt: "一位沉稳干练的男性播音员声音，吐字清晰有力" },
         },
       },
       {
         name: "qwen voice clone",
         request: {
-          model: "qwen-tts",
-          content: [text(`这是基础模型克隆音色端到端测试，运行编号${runId}。`), audio(REFERENCE_A)],
-        },
-      },
-      {
-        name: "qwen audio 3 plus",
-        request: {
-          model: "qwen-audio-3.0-tts-plus",
-          content: [text(`这是增强版本语音合成端到端测试文本，运行编号${runId}。`), audio(REFERENCE_A)],
-        },
-      },
-      {
-        name: "qwen audio 3 flash",
-        request: {
-          model: "qwen-audio-3.0-tts-flash",
-          content: [text(`这是快速版本语音合成端到端测试文本，运行编号${runId}。`), audio(REFERENCE_A)],
+          model: "qwen-audio-3.1-tts-flash",
+          content: [text(`这是克隆音色端到端测试，运行编号${runId}。`), audio(REFERENCE_A)],
         },
       },
       {
