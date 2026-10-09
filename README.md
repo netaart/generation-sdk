@@ -54,6 +54,30 @@ const client = createGenerationClient({
 });
 ```
 
+## Speech to text
+
+Doubao ASR 2.0 (`volc.seedasr.auc`) accepts exactly one audio URL and returns a text block. The gateway must support JSON requests to `/v1/audio/transcriptions` and have an enabled Volcengine speech channel.
+
+```ts
+const result = await client.generateResult({
+  model: "volc.seedasr.auc",
+  content: [
+    { type: "audio", source: { type: "url", url: "https://example.com/recording.wav" } },
+  ],
+  parameters: { audio_format: "wav", language: "zh-CN" },
+});
+
+console.log(result.content, result.requestId, result.cost);
+```
+
+The adapter requests `verbose_json` and returns `{ type: "text", text, meta: { duration, segments } }`. Duration and segment `start`/`end` are in seconds; each segment also contains `text`. Empty transcripts are valid. `requestId` and `cost` follow the normal `generateResult` behavior and are included when the gateway supplies them.
+
+`audio_format` accepts `wav`, `mp3`, `ogg` or `raw`. It is inferred from the URL path extension when omitted; signed or extensionless URLs can specify it explicitly. `language` uses Volcengine codes such as `zh-CN` and `en-US`; omission retains the upstream defaults. The URL must remain accessible to Volcengine throughout processing. File uploads, base64, multiple audio blocks, prompt text and realtime streaming are not supported by this model.
+
+`max_wait` controls the SDK request timeout in seconds (default 330). It does not extend gateway limits: New API normally allows 300 seconds for transcription, while neta-router's generic upstream timeout defaults to 240 seconds. Configure the gateway for the expected recording workload. A client timeout does not cancel a submitted upstream job; the SDK does not automatically retry transcription requests.
+
+Run `pnpm example:speech-to-text` with `NETA_ROUTER_API_KEY` and `TRANSCRIPTION_AUDIO_URL` in `.env`. Optional variables are `NETA_ROUTER_BASE_URL`, `TRANSCRIPTION_AUDIO_FORMAT` and `TRANSCRIPTION_LANGUAGE`. For a real provider check, export those variables and run `pnpm test:live:audio-transcription`; `TRANSCRIPTION_EXPECTED_TEXT` optionally checks a known passage.
+
 ## Agent and tool discovery
 
 Agents and external tools should inspect a model declaration before constructing a request. Declarations expose the accepted content blocks, source types, parameters, meta fields, descriptions, and validated request examples.
