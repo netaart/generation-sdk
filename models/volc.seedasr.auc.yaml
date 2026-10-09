@@ -13,6 +13,9 @@ content:
       sources:
         - url
       description: Audio URL accessible to Volcengine for the entire transcription job.
+    - type: text
+      required: false
+      description: Optional prompt text accepted and ignored. Transcription uses only the audio and parameters.
 parameters:
   audio_format:
     type: string
@@ -39,6 +42,8 @@ examples:
     request:
       model: volc.seedasr.auc
       content:
+        - type: text
+          text: Transcribe this recording.
         - type: audio
           source:
             type: url

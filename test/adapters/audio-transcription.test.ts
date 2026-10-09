@@ -31,6 +31,31 @@ describe("audio transcription", () => {
     });
   });
 
+  it("ignores text before and after audio without changing the provider payload", () => {
+    const original = request({ language: "en-US" });
+    const expected = buildAudioTranscriptionPayload(client.validate(original));
+    const content: GenerationContentBlock[] = [
+      { type: "text", text: "Transcribe this recording." },
+      ...original.content,
+      { type: "text", text: "Another prompt that must be ignored." },
+    ];
+    expect(buildAudioTranscriptionPayload(client.validate({ ...original, content }))).toEqual(expected);
+  });
+
+  it("rejects unsupported media even when text is present", () => {
+    const original = request();
+    const prompt: GenerationContentBlock = { type: "text", text: "Transcribe this recording." };
+    const invalid: GenerationContentBlock[][] = [
+      [prompt],
+      [prompt, ...original.content, audio("https://example.com/second.wav")],
+      [prompt, ...original.content, { type: "image", source: { type: "url", url: "https://example.com/image.png" } }],
+      [prompt, ...original.content, { type: "video", source: { type: "url", url: "https://example.com/video.mp4" } }],
+    ];
+    for (const content of invalid) {
+      expect(() => client.validate({ ...original, content })).toThrow(GenerationValidationError);
+    }
+  });
+
   it("accepts extensionless signed URLs with an explicit format", () => {
     const input = { ...request({ audio_format: "mp3" }), content: [audio("https://example.com/download?id=1")] };
     expect(buildAudioTranscriptionPayload(client.validate(input)).audio_format).toBe("mp3");

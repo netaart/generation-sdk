@@ -892,6 +892,11 @@ const builtinModels = [
           sources: ["url"],
           description: "Audio URL accessible to Volcengine for the entire transcription job.",
         },
+        {
+          type: "text",
+          required: false,
+          description: "Optional prompt text accepted and ignored. Transcription uses only the audio and parameters.",
+        },
       ],
     },
     parameters: {
@@ -922,7 +927,10 @@ const builtinModels = [
         title: "Transcribe a recording",
         request: {
           model: "volc.seedasr.auc",
-          content: [{ type: "audio", source: { type: "url", url: "https://example.com/recording.wav" } }],
+          content: [
+            { type: "text", text: "Transcribe this recording." },
+            { type: "audio", source: { type: "url", url: "https://example.com/recording.wav" } },
+          ],
           parameters: { audio_format: "wav", language: "zh-CN" },
         },
       },
