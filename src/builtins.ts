@@ -875,6 +875,59 @@ const audioSpeechModels = [
 ] satisfies GenerationModelDeclaration[];
 
 const builtinModels = [
+  {
+    schema: MODEL_SCHEMA,
+    model: "volc.seedasr.auc",
+    title: "Doubao ASR 2.0",
+    description:
+      "Transcribe one HTTP(S) audio URL into text with duration and sentence timestamps in seconds. Requires a gateway with JSON audio transcription support and an enabled Volcengine speech resource.",
+    adapter: { type: "newapi.audioTranscription" },
+    content: {
+      input: [
+        {
+          type: "audio",
+          required: true,
+          min: 1,
+          max: 1,
+          sources: ["url"],
+          description: "Audio URL accessible to Volcengine for the entire transcription job.",
+        },
+      ],
+    },
+    parameters: {
+      audio_format: {
+        type: "string",
+        optional: true,
+        enum: ["wav", "mp3", "ogg", "raw"],
+        description:
+          "Audio format. Inferred from the URL path extension when omitted; required for extensionless URLs.",
+      },
+      language: {
+        type: "string",
+        optional: true,
+        description:
+          "Volcengine language code such as zh-CN or en-US. Omit to use the provider default recognition languages.",
+      },
+      max_wait: {
+        type: "integer",
+        optional: true,
+        default: 330,
+        min: 1,
+        max: 1800,
+        description: "SDK request timeout in seconds. Does not extend gateway or provider timeouts.",
+      },
+    },
+    examples: [
+      {
+        title: "Transcribe a recording",
+        request: {
+          model: "volc.seedasr.auc",
+          content: [{ type: "audio", source: { type: "url", url: "https://example.com/recording.wav" } }],
+          parameters: { audio_format: "wav", language: "zh-CN" },
+        },
+      },
+    ],
+  },
   ...audioSpeechModels,
   {
     schema: MODEL_SCHEMA,
