@@ -17,8 +17,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export function buildAudioTranscriptionPayload(input: ResolvedGenerationRequest): Record<string, unknown> {
-  const [audio] = input.request.content;
-  if (input.request.content.length !== 1 || audio?.type !== "audio" || audio.source.type !== "url") {
+  const media = input.request.content.filter((block) => block.type !== "text");
+  const [audio] = media;
+  if (media.length !== 1 || audio?.type !== "audio" || audio.source.type !== "url") {
     throw new GenerationValidationError("Audio transcription requires exactly one audio URL");
   }
   let url: URL;
