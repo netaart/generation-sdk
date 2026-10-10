@@ -1,6 +1,6 @@
 schema: neta.generation.model.v1
-model: jev-1.13
-title: Jev 1.13
+model: jev-1.13.0
+title: Jev 1.13.0
 category: decision
 description: Evaluates state against named questions using systemOne(). Supports Noul likelihoods, Choice categories, and Score rubrics with typed answers.
 adapter:
@@ -10,7 +10,7 @@ content:
 systemOneExamples:
   - title: Classify a support ticket
     request:
-      model: jev-1.13
+      model: jev-1.13.0
       state:
         ticket: I was charged twice for my subscription.
       questions:

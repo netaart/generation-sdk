@@ -97,7 +97,7 @@ const direct = createGenerationClient({
 
 The return value is the official `APIPromise<SystemOneResult<Q>>`, preserving question-name and criteria-key inference, `.asResponse()`, and `.withResponse()`. Request and response extensions remain available in the raw response. Gateway cost metadata can be read from `X-OneAPI-Cost-Metadata`; `.withResponse().requestId` follows the official SDK's `x-typesafe-request-id` header rule. Helpers `noul`, `choice`, and `score`, official request/result types, and official SDK error classes are re-exported from this package.
 
-`listModels()` is synchronous and local, works without credentials, and includes `jev-latest` and `jev-1.13` with category `decision` and `systemOneExamples`. It does not call the TypeSafe SDK's remote model listing, which cannot parse OpenRouter's model-list format. A local declaration describes SDK capabilities; it does not assert account access or server availability. Additional Jev aliases can be supplied through `models` using `adapter: { type: "typesafe.systemOne" }`. Use `systemOne()` for these models; `generate()`, `generateResult()`, and `validate()` accept the media generation request shape.
+`listModels()` is synchronous and local, works without credentials, and includes `jev-latest` and `jev-1.13.0` with category `decision` and `systemOneExamples`. It does not call the TypeSafe SDK's remote model listing, which cannot parse OpenRouter's model-list format. A local declaration describes SDK capabilities; it does not assert account access or server availability. Additional Jev aliases can be supplied through `models` using `adapter: { type: "typesafe.systemOne" }`. Use `systemOne()` for these models; `generate()`, `generateResult()`, and `validate()` accept the media generation request shape.
 
 For a real-provider check, set `JEV_API_KEY` and `JEV_BASE_URL` (the System One API root, such as `https://openrouter.ai/api` or `https://dev.new-api.talesofai.com/typesafe`), then run `pnpm test:live:jev`. `JEV_MODEL` defaults to `jev-latest`.
 
@@ -239,7 +239,7 @@ const client = createGenerationClient({
 ## Built-in models
 
 - `jev-latest` (System One)
-- `jev-1.13` (System One)
+- `jev-1.13.0` (System One)
 - `gpt-image-2`
 - `z-image-turbo`
 - `qwen-image-edit`

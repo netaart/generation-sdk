@@ -20,7 +20,7 @@ describe("System One", () => {
   it("discovers and roundtrips Jev declarations without credentials", async () => {
     const client = createGenerationClient();
     const models = client.listModels().filter((model) => model.category === "decision");
-    expect(models.map((model) => model.model)).toEqual(["jev-1.13", "jev-latest"]);
+    expect(models.map((model) => model.model)).toEqual(["jev-1.13.0", "jev-latest"]);
     for (const model of models) {
       expect(model.adapter.type).toBe("typesafe.systemOne");
       expect(model.systemOneExamples?.[0]?.request.model).toBe(model.model);
@@ -29,7 +29,7 @@ describe("System One", () => {
     const first = models[0];
     if (!first) throw new Error("Jev model declaration is missing");
     first.model = "changed";
-    expect(client.getModel("jev-1.13")?.model).toBe("jev-1.13");
+    expect(client.getModel("jev-1.13.0")?.model).toBe("jev-1.13.0");
     const fromFile = await createGenerationClientFromFile("models/jev-latest.yaml");
     expect(fromFile.getModel("jev-latest")).toEqual(client.getModel("jev-latest"));
     expectTypeOf(fromFile.systemOne).toEqualTypeOf<TypeSafeClient["systemOne"]>();
@@ -94,7 +94,7 @@ describe("System One", () => {
         fetch: globalThis.fetch,
         systemOne: {
           ...(target === "systemOne" ? { baseURL: `${origin}/api/` } : {}),
-          defaultModel: "jev-1.13",
+          defaultModel: "jev-1.13.0",
           retry: { maxRetries: 0 },
           timeout: 5000,
         },
@@ -125,7 +125,7 @@ describe("System One", () => {
         expect(actual.headers.authorization).toBe("Bearer local-http-credential");
         expect(actual.headers["x-request-test"]).toBe("ordered");
         expect(actual.headers["x-typesafe-sdk"]).toBe("typesafe-sdk/0.6.0");
-        expect(actual.body).toBe(JSON.stringify({ ...input, model: "jev-1.13" }));
+        expect(actual.body).toBe(JSON.stringify({ ...input, model: "jev-1.13.0" }));
         expect(JSON.stringify(events)).not.toContain("local-http-credential");
         expect(events[0]?.type).toBe("request");
         expect(typeof call.withResponse).toBe("function");

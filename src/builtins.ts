@@ -1479,11 +1479,11 @@ const builtinModels = [
       },
     ],
   },
-  ...["jev-latest", "jev-1.13"].map(
+  ...["jev-latest", "jev-1.13.0"].map(
     (model): GenerationModelDeclaration => ({
       schema: MODEL_SCHEMA,
       model,
-      title: model === "jev-latest" ? "Jev Latest" : "Jev 1.13",
+      title: model === "jev-latest" ? "Jev Latest" : "Jev 1.13.0",
       category: "decision",
       description:
         "Evaluates state against named questions using systemOne(). Supports Noul likelihoods, Choice categories, and Score rubrics with typed answers.",
