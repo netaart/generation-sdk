@@ -54,6 +54,53 @@ const client = createGenerationClient({
 });
 ```
 
+## Jev System One
+
+`systemOne()` uses `@typesafe-ai/sdk@0.6.0` for requests, typed answers, cancellation, retries, and errors. Jev models are available through the existing local `listModels()`, `getModel()`, YAML export, and CLI discovery APIs.
+
+```ts
+import { choice, createGenerationClient, noul } from "@neta-art/generation";
+
+const client = createGenerationClient({
+  apiKey: process.env.NETA_ROUTER_API_KEY!,
+});
+
+const result = await client.systemOne({
+  model: "jev-latest",
+  state: { ticket: "I was charged twice.", optional: null },
+  questions: {
+    refund: noul("Does the customer need a refund?"),
+    team: choice("Which team?", { billing: "Charges", technical: "Bugs" }),
+  },
+});
+
+console.log(result.answers.refund.noul);
+console.log(result.answers.team.choice); // inferred as "billing" | "technical"
+console.log(result.usage.input_tokens);
+```
+
+The default System One URL is `${baseUrl}/typesafe/v1/systemone`, using the client's gateway token and fetch implementation. The gateway must enable the requested Jev model and native plugin route. To call OpenRouter directly, configure its System One base URL and use an OpenRouter key:
+
+```ts
+const direct = createGenerationClient({
+  apiKey: process.env.OPENROUTER_API_KEY!,
+  systemOne: {
+    baseURL: "https://openrouter.ai/api",
+    defaultModel: "jev-latest",
+    timeout: 60_000,
+    retry: { maxRetries: 0 },
+  },
+});
+```
+
+`systemOne` client options reuse the official `TypeSafeClientConfig`; per-call options reuse `RequestOptions`. `apiKey` and `fetch` come from the generation client. The official defaults apply for timeout and retries (10 seconds per attempt, 2 retries). Pass `signal`, `timeout`, `retry`, or `headers` as the second argument to `systemOne()` to override a call. Generation `debug` observes this transport with its existing redaction rules.
+
+The return value is the official `APIPromise<SystemOneResult<Q>>`, preserving question-name and criteria-key inference, `.asResponse()`, and `.withResponse()`. Request and response extensions remain available in the raw response. Gateway cost metadata can be read from `X-OneAPI-Cost-Metadata`; `.withResponse().requestId` follows the official SDK's `x-typesafe-request-id` header rule. Helpers `noul`, `choice`, and `score`, official request/result types, and official SDK error classes are re-exported from this package.
+
+`listModels()` is synchronous and local, works without credentials, and includes `jev-latest` and `jev-1.13` with category `decision` and `systemOneExamples`. It does not call the TypeSafe SDK's remote model listing, which cannot parse OpenRouter's model-list format. A local declaration describes SDK capabilities; it does not assert account access or server availability. Additional Jev aliases can be supplied through `models` using `adapter: { type: "typesafe.systemOne" }`. Use `systemOne()` for these models; `generate()`, `generateResult()`, and `validate()` accept the media generation request shape.
+
+For a real-provider check, set `JEV_API_KEY` and `JEV_BASE_URL` (the System One API root, such as `https://openrouter.ai/api` or `https://dev.new-api.talesofai.com/typesafe`), then run `pnpm test:live:jev`. `JEV_MODEL` defaults to `jev-latest`.
+
 ## Speech to text
 
 Doubao ASR 2.0 (`volc.seedasr.auc`) accepts exactly one audio URL and returns a text block. The gateway must support JSON requests to `/v1/audio/transcriptions` and have an enabled Volcengine speech channel.
@@ -191,6 +238,8 @@ const client = createGenerationClient({
 
 ## Built-in models
 
+- `jev-latest` (System One)
+- `jev-1.13` (System One)
 - `gpt-image-2`
 - `z-image-turbo`
 - `qwen-image-edit`
