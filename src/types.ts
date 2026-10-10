@@ -1,6 +1,8 @@
+import type { SystemOneRequest, TypeSafeClient, TypeSafeClientConfig } from "@typesafe-ai/sdk";
+
 export const MODEL_SCHEMA = "neta.generation.model.v1" as const;
 
-export const GENERATION_MODEL_CATEGORIES = ["image", "video", "audio"] as const;
+export const GENERATION_MODEL_CATEGORIES = ["image", "video", "audio", "decision"] as const;
 
 export type GenerationModelCategory = (typeof GENERATION_MODEL_CATEGORIES)[number];
 
@@ -132,6 +134,11 @@ export type GenerationModelDeclaration = {
     title?: string;
     request: GenerateRequest;
   }>;
+  /** Examples passed directly to systemOne(), using the official TypeSafe request type. */
+  systemOneExamples?: Array<{
+    title?: string;
+    request: SystemOneRequest;
+  }>;
 };
 
 export type GenerateRequest = {
@@ -213,9 +220,13 @@ export type CreateGenerationClientOptions = {
   sourceResolver?: GenerationSourceResolver;
   adapters?: Record<string, GenerationAdapter>;
   debug?: boolean | GenerationDebugOptions;
+  /** Official TypeSafe SDK settings. Uses apiKey and fetch from this generation client. */
+  systemOne?: Omit<TypeSafeClientConfig, "apiKey" | "fetch">;
 };
 
 export type GenerationClient = {
+  /** Evaluates state and typed questions with the official TypeSafe SDK. */
+  systemOne: TypeSafeClient["systemOne"];
   /** Validates the request and sends it to the model adapter. */
   generate(request: GenerateRequest): Promise<GenerationContentBlock[]>;
   /** Resolves model defaults and all available validation rules without requiring an API key or making a network request. */

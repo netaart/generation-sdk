@@ -59,6 +59,7 @@
     "test:live:suno": "vitest run --config vitest.live.config.ts test/live/suno-live.test.ts",
     "test:live:audio-speech": "vitest run --config vitest.live.config.ts test/live/audio-speech-live.test.ts",
     "test:live:audio-transcription": "vitest run --config vitest.live.config.ts test/live/audio-transcription-live.test.ts",
+    "test:live:jev": "vitest run --config vitest.live.config.ts test/live/jev-live.test.ts",
     "test:watch": "vitest",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
@@ -66,6 +67,7 @@
     "prepublishOnly": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
   },
   "dependencies": {
+    "@typesafe-ai/sdk": "0.6.0",
     "yaml": "^2.8.3"
   },
   "devDependencies": {

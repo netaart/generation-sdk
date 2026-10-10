@@ -54,6 +54,16 @@ function isMetaTaskVariantSpec(value: unknown): boolean {
   );
 }
 
+function isSystemOneExample(value: unknown): boolean {
+  if (!isRecord(value) || !isRecord(value.request)) return false;
+  return (
+    (value.title === undefined || typeof value.title === "string") &&
+    (value.request.model === undefined || typeof value.request.model === "string") &&
+    "state" in value.request &&
+    isRecord(value.request.questions)
+  );
+}
+
 function isGenerationModelCategory(value: unknown): value is GenerationModelCategory {
   return typeof value === "string" && (GENERATION_MODEL_CATEGORIES as readonly string[]).includes(value);
 }
@@ -94,6 +104,7 @@ export function isGenerationModelDeclaration(value: unknown): value is Generatio
   const parameters = value.parameters;
   const meta = value.meta;
   const examples = value.examples;
+  const systemOneExamples = value.systemOneExamples;
   return (
     value.schema === MODEL_SCHEMA &&
     typeof value.model === "string" &&
@@ -108,7 +119,9 @@ export function isGenerationModelDeclaration(value: unknown): value is Generatio
     Array.isArray(content.input) &&
     (parameters === undefined || (isRecord(parameters) && Object.values(parameters).every(isParameterSpec))) &&
     (meta === undefined || isMetaSpec(meta)) &&
-    (examples === undefined || Array.isArray(examples))
+    (examples === undefined || Array.isArray(examples)) &&
+    (systemOneExamples === undefined ||
+      (Array.isArray(systemOneExamples) && systemOneExamples.every(isSystemOneExample)))
   );
 }
 

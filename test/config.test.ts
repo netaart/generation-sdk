@@ -47,6 +47,7 @@ describe("config", () => {
         "video-upscale-native",
       ],
       audio: ["suno_music_chirp_fenix"],
+      decision: ["jev-1.13.0", "jev-latest"],
     } as const;
 
     const byCategory = {
@@ -62,11 +63,16 @@ describe("config", () => {
         .listModels()
         .filter((model) => model.category === "audio")
         .map((model) => model.model),
+      decision: client
+        .listModels()
+        .filter((model) => model.category === "decision")
+        .map((model) => model.model),
     };
 
     expect(byCategory.image.sort()).toEqual([...expected.image]);
     expect(byCategory.video.sort()).toEqual([...expected.video]);
     expect(byCategory.audio.sort()).toEqual([...expected.audio]);
+    expect(byCategory.decision.sort()).toEqual([...expected.decision]);
     for (const model of [
       "higgs-tts",
       "qwen-tts",
@@ -83,9 +89,9 @@ describe("config", () => {
     ]) {
       expect(client.getModel(model)?.category, model).toBeUndefined();
     }
-    expect(byCategory.image.length + byCategory.video.length + byCategory.audio.length).toBe(
-      client.listModels().filter((model) => model.category !== undefined).length,
-    );
+    expect(
+      byCategory.image.length + byCategory.video.length + byCategory.audio.length + byCategory.decision.length,
+    ).toBe(client.listModels().filter((model) => model.category !== undefined).length);
 
     const files = await readGenerationModelDeclarationsFromDirectory(join(process.cwd(), "models"));
     expect(files.map((model) => [model.model, model.category]).sort()).toEqual(

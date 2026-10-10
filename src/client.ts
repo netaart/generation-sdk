@@ -1,3 +1,4 @@
+import { TypeSafeClient } from "@typesafe-ai/sdk";
 import { getGenerationAdapter, tryGetGenerationAdapter } from "./adapters/index.js";
 import { builtinGenerationModels } from "./builtins.js";
 import {
@@ -8,7 +9,7 @@ import {
   writeGenerationModelDeclarations,
 } from "./config.js";
 import { GenerationConfigError } from "./errors.js";
-import { createDebugFetch } from "./http.js";
+import { createDebugFetch, joinUrl } from "./http.js";
 import {
   extractGenerationResultFields,
   extractGenerationResultHeaderFields,
@@ -152,6 +153,12 @@ export function createGenerationClient(options: CreateGenerationClientOptions = 
   if (!fetchFn) throw new GenerationConfigError("A fetch implementation is required");
   const debug = resolveDebugConfig(options.debug);
   const adapterFetch = debug ? createDebugFetch(fetchFn, debug) : fetchFn;
+  const systemOneConfig = {
+    ...options.systemOne,
+    baseURL: options.systemOne?.baseURL ?? joinUrl(options.baseUrl ?? DEFAULT_BASE_URL, "typesafe"),
+    defaultModel: options.systemOne?.defaultModel ?? "jev-latest",
+  };
+  let systemOneClient: TypeSafeClient | undefined;
 
   function requireModel(model: string): GenerationModelDeclaration {
     const declaration = byModel.get(model);
@@ -161,6 +168,9 @@ export function createGenerationClient(options: CreateGenerationClientOptions = 
 
   function validateRequest(request: GenerateRequest): ResolvedGenerationRequest {
     const declaration = requireModel(request.model);
+    if (declaration.adapter.type === "typesafe.systemOne") {
+      throw new GenerationConfigError(`Model ${request.model} requires systemOne() with state and questions`);
+    }
     validateGenerationContent(declaration, request.content);
     const parameters = resolveGenerationParameters(declaration, request.parameters);
     const meta = resolveGenerationMeta(
@@ -190,6 +200,22 @@ export function createGenerationClient(options: CreateGenerationClientOptions = 
   }
 
   const client: GenerationClientWithResult = {
+    systemOne(request, requestOptions) {
+      const declaration = requireModel(request.model ?? systemOneConfig.defaultModel);
+      if (declaration.adapter.type !== "typesafe.systemOne") {
+        throw new GenerationConfigError(`Model does not support systemOne(): ${declaration.model}`);
+      }
+      if (!systemOneClient) {
+        if (!options.apiKey) throw new GenerationConfigError("apiKey is required");
+        systemOneClient = new TypeSafeClient({
+          ...systemOneConfig,
+          apiKey: options.apiKey,
+          fetch: adapterFetch,
+        });
+      }
+      return systemOneClient.systemOne(request, requestOptions);
+    },
+
     validate(request: GenerateRequest) {
       return validateRequest(request);
     },

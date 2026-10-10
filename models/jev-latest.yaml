@@ -1,0 +1,25 @@
+schema: neta.generation.model.v1
+model: jev-latest
+title: Jev Latest
+category: decision
+description: Evaluates state against named questions using systemOne(). Supports Noul likelihoods, Choice categories, and Score rubrics with typed answers.
+adapter:
+  type: typesafe.systemOne
+content:
+  input: []
+systemOneExamples:
+  - title: Classify a support ticket
+    request:
+      model: jev-latest
+      state:
+        ticket: I was charged twice for my subscription.
+      questions:
+        refund:
+          type: noul
+          instructions: Does the customer need a refund?
+        team:
+          type: choice
+          instructions: Which team should handle this ticket?
+          criteria:
+            billing: Charges and refunds
+            technical: Bugs and outages
