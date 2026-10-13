@@ -1567,6 +1567,41 @@ const builtinModels = [
   ...audioSpeechModels,
   {
     schema: MODEL_SCHEMA,
+    model: "yue2",
+    title: "YuE2 Song Generation",
+    category: "audio",
+    description:
+      "Generates a full song with vocals from a style description and lyrics. Both texts are required and capped at 2000 characters each. Generation is asynchronous and can take several minutes.",
+    adapter: { type: "newapi.audioGenerations" },
+    content: {
+      input: [
+        {
+          type: "text",
+          required: true,
+          min: 2,
+          max: 2,
+          roles: ["prompt", "lyrics"],
+          roleRequired: true,
+          description:
+            "Exactly two text blocks. Use meta.role prompt for the style description and meta.role lyrics for the lyrics to sing.",
+        },
+      ],
+    },
+    examples: [
+      {
+        title: "Song from style and lyrics",
+        request: {
+          model: "yue2",
+          content: [
+            { type: "text", text: "bright J-pop, female vocal, piano", meta: { role: "prompt" } },
+            { type: "text", text: "[verse]\nla la la", meta: { role: "lyrics" } },
+          ],
+        },
+      },
+    ],
+  },
+  {
+    schema: MODEL_SCHEMA,
     model: "gpt-image-2",
     title: "GPT Image 2",
     category: "image",
@@ -1724,41 +1759,6 @@ const builtinModels = [
         request: {
           model: "video-upscale-native",
           content: [{ type: "video", source: { type: "url", url: "https://example.com/input.mp4" } }],
-        },
-      },
-    ],
-  },
-  {
-    schema: MODEL_SCHEMA,
-    model: "yue2",
-    title: "YuE2 Song Generation",
-    category: "audio",
-    description:
-      "Generates a full song with vocals from a style description and lyrics. Both texts are required and capped at 2000 characters each. Generation is asynchronous and can take several minutes.",
-    adapter: { type: "newapi.audioGenerations" },
-    content: {
-      input: [
-        {
-          type: "text",
-          required: true,
-          min: 2,
-          max: 2,
-          roles: ["prompt", "lyrics"],
-          roleRequired: true,
-          description:
-            "Exactly two text blocks. Use meta.role prompt for the style description and meta.role lyrics for the lyrics to sing.",
-        },
-      ],
-    },
-    examples: [
-      {
-        title: "Song from style and lyrics",
-        request: {
-          model: "yue2",
-          content: [
-            { type: "text", text: "bright J-pop, female vocal, piano", meta: { role: "prompt" } },
-            { type: "text", text: "[verse]\nla la la", meta: { role: "lyrics" } },
-          ],
         },
       },
     ],
