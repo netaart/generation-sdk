@@ -335,6 +335,7 @@ const client = createGenerationClient({
 - `suno_video_to_song_chirp_v5`
 - `suno_vox_chirp_v5`
 - `meshy`
+- `yue2`
 
 Built-in model declarations share the same client-level `apiKey` and `baseUrl`.
 
@@ -551,6 +552,22 @@ Suno uses one shared adapter with a small public model set: `suno_music_chirp_fe
 `title`, `tags`, `make_instrumental`, and `metadata_params` belong in `meta`.
 
 `suno_music` is removed in this release. Migrate to a concrete model name and stop sending `parameters.operation` or `meta.task`.
+
+`yue2` generates a full song with vocals through `newapi.audioGenerations`. Send exactly two text blocks and mark them
+with `meta.role`: `prompt` for the style description and `lyrics` for the words to sing. Each text is trimmed and
+must be 1 to 2000 characters. The call polls the task for up to 21 minutes and returns one audio block.
+
+```ts
+const result = await client.generateResult({
+  model: "yue2",
+  content: [
+    { type: "text", text: "bright J-pop, female vocal, piano", meta: { role: "prompt" } },
+    { type: "text", text: "[verse]\nla la la", meta: { role: "lyrics" } },
+  ],
+});
+
+console.log(result.content, result.cost);
+```
 
 ## 3D generation
 
@@ -813,6 +830,7 @@ Built-in adapters:
 - `kling.videoGenerations`
 - `suno.tasks`
 - `meshy.tasks`
+- `newapi.audioGenerations`
 
 You can register custom adapters:
 
