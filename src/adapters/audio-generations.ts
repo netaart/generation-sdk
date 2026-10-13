@@ -1,7 +1,12 @@
 import { GenerationProviderError, GenerationTimeoutError, GenerationValidationError } from "../errors.js";
 import { fetchWithTimeout, joinUrl } from "../http.js";
 import { taskPollTicks } from "../task-poll.js";
-import type { GenerationAdapter, GenerationAdapterInput, GenerationContentBlock } from "../types.js";
+import type {
+  GenerationAdapter,
+  GenerationAdapterInput,
+  GenerationContentBlock,
+  ResolvedGenerationRequest,
+} from "../types.js";
 import { compactObject } from "../utils.js";
 
 const REQUEST_TIMEOUT_MS = 60_000;
@@ -21,7 +26,7 @@ function asString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
-function songText(input: GenerationAdapterInput): { prompt: string; lyrics: string } {
+function songText(input: ResolvedGenerationRequest): { prompt: string; lyrics: string } {
   const model = input.declaration.model;
   const texts = input.request.content.filter((block): block is TextBlock => block.type === "text");
   const pick = (role: "prompt" | "lyrics"): string => {
@@ -62,7 +67,7 @@ async function requestJson(input: GenerationAdapterInput, path: string, init: Re
   }
 }
 
-export const audioGenerationsAdapter: GenerationAdapter = async (input) => {
+async function generateSong(input: GenerationAdapterInput): Promise<GenerationContentBlock[]> {
   const { prompt, lyrics } = songText(input);
   const submitted = await requestJson(input, "/v1/audio/generations", {
     method: "POST",
@@ -102,4 +107,10 @@ export const audioGenerationsAdapter: GenerationAdapter = async (input) => {
     }
   }
   throw new GenerationTimeoutError("Timed out waiting for song generation", { taskId });
-};
+}
+
+export const audioGenerationsAdapter: GenerationAdapter = Object.assign(generateSong, {
+  validate(input: ResolvedGenerationRequest): void {
+    songText(input);
+  },
+});

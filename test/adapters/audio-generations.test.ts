@@ -8,6 +8,8 @@ const SUBMIT_URL = "https://router.neta.art/v1/audio/generations";
 const AUDIO_URL = "https://example.com/song.mp3";
 const POLL_INTERVAL_MS = 5_000;
 const MAX_WAIT_MS = 21 * 60 * 1000;
+// new-api settles and refunds a yue2 task at 20 minutes, so the SDK must still be waiting then.
+const SERVER_TIMEOUT_MS = 20 * 60 * 1000;
 
 const styleBlock: GenerationContentBlock = {
   type: "text",
@@ -15,6 +17,7 @@ const styleBlock: GenerationContentBlock = {
   meta: { role: "prompt" },
 };
 const lyricsBlock: GenerationContentBlock = { type: "text", text: "[verse]\nla la la", meta: { role: "lyrics" } };
+const songRequest = { model: "yue2", content: [styleBlock, lyricsBlock] };
 
 function textBlock(role: "prompt" | "lyrics", text: string): GenerationContentBlock {
   return { type: "text", text, meta: { role } };
@@ -47,6 +50,20 @@ function settlingClient(calls: FetchCall[]) {
   );
 }
 
+// Reports whether the promise has settled, without turning a rejection into an unhandled one.
+function watch(promise: Promise<unknown>): { settled: () => boolean } {
+  let settled = false;
+  promise.then(
+    () => {
+      settled = true;
+    },
+    () => {
+      settled = true;
+    },
+  );
+  return { settled: () => settled };
+}
+
 afterEach(() => {
   vi.useRealTimers();
 });
@@ -61,18 +78,18 @@ describe("yue2 song generation", () => {
         calls,
         json({ id: "task-1", status: "queued", usage: { cost: 0.3 } }),
         json({ id: "task-1", status: "in_progress" }),
-        json({ id: "task-1", status: "completed", audio_url: "https://example.com/song.mp3", usage: { cost: 0.3 } }),
+        json({ id: "task-1", status: "completed", audio_url: AUDIO_URL, usage: { cost: 0.3 } }),
       ),
     });
 
-    const promise = client.generateResult({ model: "yue2", content: [styleBlock, lyricsBlock] });
+    const promise = client.generateResult(songRequest);
     await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
 
     await expect(promise).resolves.toEqual({
       content: [
         {
           type: "audio",
-          source: { type: "url", url: "https://example.com/song.mp3" },
+          source: { type: "url", url: AUDIO_URL },
           meta: { task_id: "task-1", status: "succeeded" },
         },
       ],
@@ -99,7 +116,7 @@ describe("yue2 song generation", () => {
       json({ id: "task-1", status: "completed", audio_url: AUDIO_URL }),
     );
 
-    const result = await client.generateResult({ model: "yue2", content: [styleBlock, lyricsBlock] });
+    const result = await client.generateResult(songRequest);
 
     expect(result.cost).toBe(0.3);
   });
@@ -115,7 +132,7 @@ describe("yue2 song generation", () => {
       json({ id: "task-1", status: "completed", audio_url: AUDIO_URL }),
     );
 
-    const promise = client.generateResult({ model: "yue2", content: [styleBlock, lyricsBlock] });
+    const promise = client.generateResult(songRequest);
     await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 2);
 
     await expect(promise).resolves.toMatchObject({ content: [{ type: "audio", source: { url: AUDIO_URL } }] });
@@ -183,6 +200,27 @@ describe("yue2 song generation", () => {
       await expect(client.generateResult({ model: "yue2", content })).rejects.toBeInstanceOf(GenerationValidationError);
       expect(calls).toHaveLength(0);
     });
+
+    it.each([
+      ["lyrics over 2000 characters", [styleBlock, textBlock("lyrics", "a".repeat(2001))]],
+      ["prompt over 2000 characters", [textBlock("prompt", "a".repeat(2001)), lyricsBlock]],
+      ["empty lyrics", [styleBlock, textBlock("lyrics", "  ")]],
+      ["two prompts and no lyrics", [styleBlock, textBlock("prompt", "second style")]],
+    ])("client.validate rejects %s", (_name, content) => {
+      const calls: FetchCall[] = [];
+      const client = settlingClient(calls);
+
+      expect(() => client.validate({ model: "yue2", content })).toThrow(GenerationValidationError);
+      expect(calls).toHaveLength(0);
+    });
+
+    it("client.validate accepts a style and lyrics pair without sending a request", () => {
+      const calls: FetchCall[] = [];
+      const client = settlingClient(calls);
+
+      expect(() => client.validate(songRequest)).not.toThrow();
+      expect(calls).toHaveLength(0);
+    });
   });
 
   describe("failures", () => {
@@ -199,7 +237,7 @@ describe("yue2 song generation", () => {
         json({ id: "task-1", status: "failed", error: { code, message: "worker gave up" } }),
       );
 
-      const promise = client.generateResult({ model: "yue2", content: [styleBlock, lyricsBlock] });
+      const promise = client.generateResult(songRequest);
       const rejection = expect(promise).rejects.toMatchObject({
         name: "GenerationProviderError",
         message: expect.stringContaining("worker gave up"),
@@ -222,13 +260,44 @@ describe("yue2 song generation", () => {
         json({ id: "task-1", status: "in_progress" }),
       );
 
-      const promise = client.generateResult({ model: "yue2", content: [styleBlock, lyricsBlock] });
+      const promise = client.generateResult(songRequest);
       const rejection = expect(promise).rejects.toMatchObject({
         name: "GenerationTimeoutError",
         details: { taskId: "task-1" },
       });
-      await vi.advanceTimersByTimeAsync(MAX_WAIT_MS + POLL_INTERVAL_MS);
+      const outcome = watch(promise);
+      await vi.advanceTimersByTimeAsync(MAX_WAIT_MS);
+      expect(outcome.settled()).toBe(false);
+      await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
       await rejection;
+    });
+
+    it("is still polling after the server-side 20 minute timeout and delivers a late song", async () => {
+      vi.useFakeTimers();
+      const calls: FetchCall[] = [];
+      let done = false;
+      const client = createGenerationClient({
+        apiKey: "key",
+        fetch: (async (url: string | URL | Request, init?: RequestInit) => {
+          calls.push({ url: String(url), init: init ?? {} });
+          if (init?.method === "POST") return json({ id: "task-1", status: "queued" });
+          return done
+            ? json({ id: "task-1", status: "completed", audio_url: AUDIO_URL })
+            : json({ id: "task-1", status: "in_progress" });
+        }) as typeof fetch,
+      });
+
+      const promise = client.generateResult(songRequest);
+      const outcome = watch(promise);
+      await vi.advanceTimersByTimeAsync(SERVER_TIMEOUT_MS + POLL_INTERVAL_MS);
+      expect(outcome.settled()).toBe(false);
+      const polled = calls.length;
+      await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
+      expect(calls.length).toBeGreaterThan(polled);
+
+      done = true;
+      await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
+      await expect(promise).resolves.toMatchObject({ content: [{ type: "audio", source: { url: AUDIO_URL } }] });
     });
 
     it("throws a provider error with status and body when the submit is rejected", async () => {
@@ -236,7 +305,7 @@ describe("yue2 song generation", () => {
       const body = JSON.stringify({ error: { message: "insufficient quota" } });
       const client = clientWith(calls, new Response(body, { status: 403 }));
 
-      await expect(client.generateResult({ model: "yue2", content: [styleBlock, lyricsBlock] })).rejects.toMatchObject({
+      await expect(client.generateResult(songRequest)).rejects.toMatchObject({
         name: "GenerationProviderError",
         status: 403,
         body,
@@ -252,7 +321,7 @@ describe("yue2 song generation", () => {
         new Response("bad gateway", { status: 502 }),
       );
 
-      await expect(client.generateResult({ model: "yue2", content: [styleBlock, lyricsBlock] })).rejects.toMatchObject({
+      await expect(client.generateResult(songRequest)).rejects.toMatchObject({
         name: "GenerationProviderError",
         status: 502,
         body: "bad gateway",
@@ -263,7 +332,7 @@ describe("yue2 song generation", () => {
       const calls: FetchCall[] = [];
       const client = clientWith(calls, new Response("<html>oops</html>", { status: 200 }));
 
-      await expect(client.generateResult({ model: "yue2", content: [styleBlock, lyricsBlock] })).rejects.toMatchObject({
+      await expect(client.generateResult(songRequest)).rejects.toMatchObject({
         name: "GenerationProviderError",
         status: 200,
         body: "<html>oops</html>",
@@ -274,7 +343,7 @@ describe("yue2 song generation", () => {
       const calls: FetchCall[] = [];
       const client = clientWith(calls, json({ status: "queued" }));
 
-      await expect(client.generateResult({ model: "yue2", content: [styleBlock, lyricsBlock] })).rejects.toMatchObject({
+      await expect(client.generateResult(songRequest)).rejects.toMatchObject({
         name: "GenerationProviderError",
       });
       expect(calls).toHaveLength(1);
@@ -288,7 +357,7 @@ describe("yue2 song generation", () => {
         json({ id: "task-1", status: "completed" }),
       );
 
-      await expect(client.generateResult({ model: "yue2", content: [styleBlock, lyricsBlock] })).rejects.toMatchObject({
+      await expect(client.generateResult(songRequest)).rejects.toMatchObject({
         name: "GenerationProviderError",
         details: { taskId: "task-1" },
       });
