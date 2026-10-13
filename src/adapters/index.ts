@@ -1,6 +1,7 @@
 import { GenerationUnsupportedAdapterError } from "../errors.js";
 import type { GenerationAdapter } from "../types.js";
 import { arkVideoGenerationsAdapter } from "./ark-video-generations.js";
+import { audioGenerationsAdapter } from "./audio-generations.js";
 import { audioSpeechAdapter } from "./audio-speech.js";
 import { audioTranscriptionAdapter } from "./audio-transcription.js";
 import { geminiGenerateContentAdapter } from "./gemini-generate-content.js";
@@ -14,6 +15,7 @@ import { videoUpscaleNativeAdapter } from "./video-upscale-native.js";
 
 export const builtinGenerationAdapters: Record<string, GenerationAdapter> = {
   "ark.videoGenerations": arkVideoGenerationsAdapter,
+  "newapi.audioGenerations": audioGenerationsAdapter,
   "newapi.audioTranscription": audioTranscriptionAdapter,
   "openai.audioSpeech": audioSpeechAdapter,
   "gemini.generateContent": geminiGenerateContentAdapter,
@@ -43,6 +45,7 @@ export function getGenerationAdapter(
 }
 
 export * from "./ark-video-generations.js";
+export * from "./audio-generations.js";
 export * from "./audio-speech.js";
 export * from "./audio-transcription.js";
 export * from "./gemini-generate-content.js";
