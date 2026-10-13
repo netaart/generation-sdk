@@ -54,7 +54,7 @@ describe("config", () => {
         "seedance-2-5",
         "video-upscale-native",
       ],
-      audio: ["suno_music_chirp_fenix"],
+      audio: ["suno_music_chirp_fenix", "yue2"],
       "3d": ["meshy"],
       decision: ["jev-1.13.0", "jev-latest", "openai/gpt-6-luna-decisions"],
     } as const;

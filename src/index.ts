@@ -1,5 +1,6 @@
 export {
   arkVideoGenerationsAdapter,
+  audioGenerationsAdapter,
   audioSpeechAdapter,
   audioTranscriptionAdapter,
   builtinGenerationAdapters,
