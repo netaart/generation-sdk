@@ -21,8 +21,8 @@ parameters:
   abc_mode:
     type: string
     optional: true
-    enum: [full, melody, off]
-    description: How the song uses the ABC score. full follows a score with chords, melody follows only the melody, off plans no score. Omitted, a given score is read for chord marks to pick full or melody, and without a score full is used. off cannot be combined with an abc block or return_abc true.
+    enum: [full, melody, "off"]
+    description: How the song uses the ABC score. full follows a score with chords, melody follows only the melody, off plans no score. A score with chord marks is rejected in melody mode when the task runs; remove the chords or use full. Omitted, a given score is read for chord marks to pick full or melody, and without a score full is used. off cannot be combined with an abc block or return_abc true.
   seed:
     type: integer
     optional: true

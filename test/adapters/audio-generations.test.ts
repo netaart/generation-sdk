@@ -482,6 +482,14 @@ describe("song2 generation", () => {
         expect(spec).not.toHaveProperty("default");
       }
     });
+
+    it("tells agents that melody mode rejects a score with chord marks", () => {
+      const description = settlingClient([]).getModel("song2")?.parameters?.abc_mode?.description ?? "";
+
+      const rule = description.split(". ").find((s) => /melody/.test(s) && /chord/.test(s) && /reject/.test(s));
+
+      expect(rule).toBeDefined();
+    });
   });
 
   describe("score output", () => {
