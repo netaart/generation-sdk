@@ -18,8 +18,11 @@ const styleBlock: GenerationContentBlock = {
 };
 const lyricsBlock: GenerationContentBlock = { type: "text", text: "[verse]\nla la la", meta: { role: "lyrics" } };
 const songRequest = { model: "song2", content: [styleBlock, lyricsBlock] };
+const OLD_REQUEST_BODY = '{"model":"song2","prompt":"bright J-pop, female vocal, piano","lyrics":"[verse]\\nla la la"}';
+const ABC = "X:1\nT:Sunrise\nM:4/4\nK:C\n|:CDEF GABc:|\nw:la la la la";
+const MAX_ABC_CHARS = 64_000;
 
-function textBlock(role: "prompt" | "lyrics", text: string): GenerationContentBlock {
+function textBlock(role: "prompt" | "lyrics" | "abc", text: string): GenerationContentBlock {
   return { type: "text", text, meta: { role } };
 }
 
@@ -224,6 +227,365 @@ describe("song2 generation", () => {
 
       expect(() => client.validate(songRequest)).not.toThrow();
       expect(calls).toHaveLength(0);
+    });
+  });
+
+  describe("old requests keep their shape", () => {
+    it("sends exactly the style and lyrics keys, in order, when there is no score or parameter", async () => {
+      const calls: FetchCall[] = [];
+
+      await settlingClient(calls).generateResult(songRequest);
+
+      expect(calls[0]?.init.body).toBe(OLD_REQUEST_BODY);
+    });
+
+    it("sends the same body when the parameters are an empty object", async () => {
+      const calls: FetchCall[] = [];
+
+      await settlingClient(calls).generateResult({ ...songRequest, parameters: {} });
+
+      expect(calls[0]?.init.body).toBe(OLD_REQUEST_BODY);
+    });
+
+    it.each([
+      ["no abc key", {}],
+      ["an empty abc", { abc: "" }],
+      ["a blank abc", { abc: "  \n " }],
+      ["a null abc", { abc: null }],
+      ["a non-string abc", { abc: 12 }],
+    ])("returns the one audio block when the completed task has %s", async (_name, extra) => {
+      const calls: FetchCall[] = [];
+      const client = clientWith(
+        calls,
+        json({ id: "task-1", status: "queued" }),
+        json({ id: "task-1", status: "completed", audio_url: AUDIO_URL, ...extra }),
+      );
+
+      const result = await client.generateResult(songRequest);
+
+      expect(result.content).toEqual([
+        { type: "audio", source: { type: "url", url: AUDIO_URL }, meta: { task_id: "task-1", status: "succeeded" } },
+      ]);
+    });
+  });
+
+  describe("score input", () => {
+    it("sends the abc text block as the abc key after style and lyrics", async () => {
+      const calls: FetchCall[] = [];
+
+      await settlingClient(calls).generateResult({
+        model: "song2",
+        content: [styleBlock, lyricsBlock, textBlock("abc", ABC)],
+      });
+
+      const body = JSON.parse(String(calls[0]?.init.body));
+      expect(body).toEqual({
+        model: "song2",
+        prompt: "bright J-pop, female vocal, piano",
+        lyrics: "[verse]\nla la la",
+        abc: ABC,
+      });
+      expect(Object.keys(body)).toEqual(["model", "prompt", "lyrics", "abc"]);
+    });
+
+    it("accepts the abc block in any position", async () => {
+      const calls: FetchCall[] = [];
+
+      await settlingClient(calls).generateResult({
+        model: "song2",
+        content: [textBlock("abc", ABC), styleBlock, lyricsBlock],
+      });
+
+      expect(JSON.parse(String(calls[0]?.init.body)).abc).toBe(ABC);
+    });
+
+    it("trims the abc text and keeps its inner line breaks", async () => {
+      const calls: FetchCall[] = [];
+
+      await settlingClient(calls).generateResult({
+        model: "song2",
+        content: [styleBlock, lyricsBlock, textBlock("abc", `\n  ${ABC}\n\n`)],
+      });
+
+      expect(JSON.parse(String(calls[0]?.init.body)).abc).toBe(ABC);
+    });
+
+    it("accepts an abc of exactly 64000 code points and rejects one more", async () => {
+      const accepted: FetchCall[] = [];
+      await settlingClient(accepted).generateResult({
+        model: "song2",
+        content: [styleBlock, lyricsBlock, textBlock("abc", "😀".repeat(MAX_ABC_CHARS))],
+      });
+      expect(accepted).toHaveLength(2);
+
+      const rejected: FetchCall[] = [];
+      await expect(
+        settlingClient(rejected).generateResult({
+          model: "song2",
+          content: [styleBlock, lyricsBlock, textBlock("abc", "😀".repeat(MAX_ABC_CHARS + 1))],
+        }),
+      ).rejects.toBeInstanceOf(GenerationValidationError);
+      expect(rejected).toHaveLength(0);
+    });
+
+    it.each([
+      ["a blank abc", [styleBlock, lyricsBlock, textBlock("abc", " \n\t ")]],
+      ["two abc blocks", [styleBlock, lyricsBlock, textBlock("abc", ABC), textBlock("abc", ABC)]],
+      ["an abc without lyrics", [styleBlock, textBlock("abc", ABC)]],
+      ["an abc without a style", [lyricsBlock, textBlock("abc", ABC)]],
+    ])("rejects %s before any request", async (_name, content) => {
+      const calls: FetchCall[] = [];
+      const client = settlingClient(calls);
+
+      await expect(client.generateResult({ model: "song2", content })).rejects.toBeInstanceOf(
+        GenerationValidationError,
+      );
+      expect(() => client.validate({ model: "song2", content })).toThrow(GenerationValidationError);
+      expect(calls).toHaveLength(0);
+    });
+
+    it("still rejects a fourth text block and an unknown role", () => {
+      const client = settlingClient([]);
+
+      expect(() =>
+        client.validate({
+          model: "song2",
+          content: [styleBlock, lyricsBlock, textBlock("abc", ABC), textBlock("prompt", "another")],
+        }),
+      ).toThrow(GenerationValidationError);
+      expect(() =>
+        client.validate({
+          model: "song2",
+          content: [styleBlock, lyricsBlock, { type: "text", text: ABC, meta: { role: "score" } }],
+        }),
+      ).toThrow(GenerationValidationError);
+    });
+  });
+
+  describe("generation parameters", () => {
+    it("resolves no parameters for an old request, so cohub queues the same empty object", () => {
+      const client = settlingClient([]);
+
+      expect(client.validate(songRequest).parameters).toEqual({});
+      expect(client.validate({ ...songRequest, parameters: {} }).parameters).toEqual({});
+    });
+
+    it.each([
+      ["abc_mode", "melody"],
+      ["seed", 42],
+      ["cfg_scale", 3.5],
+      ["return_abc", true],
+    ])("adds only %s to the request body when it is the one parameter given", async (key, value) => {
+      const calls: FetchCall[] = [];
+
+      await settlingClient(calls).generateResult({ ...songRequest, parameters: { [key]: value } });
+
+      expect(JSON.parse(String(calls[0]?.init.body))).toEqual({
+        model: "song2",
+        prompt: "bright J-pop, female vocal, piano",
+        lyrics: "[verse]\nla la la",
+        [key]: value,
+      });
+    });
+
+    it("sends zero and false, which are values and not absence", async () => {
+      const calls: FetchCall[] = [];
+
+      await settlingClient(calls).generateResult({
+        ...songRequest,
+        parameters: { seed: 0, cfg_scale: 0, return_abc: false },
+      });
+
+      expect(JSON.parse(String(calls[0]?.init.body))).toMatchObject({ seed: 0, cfg_scale: 0, return_abc: false });
+    });
+
+    it("sends the score and every parameter after style and lyrics in a fixed order", async () => {
+      const calls: FetchCall[] = [];
+
+      await settlingClient(calls).generateResult({
+        model: "song2",
+        content: [styleBlock, lyricsBlock, textBlock("abc", ABC)],
+        parameters: { return_abc: true, cfg_scale: 4, seed: 9_007_199_254_740_991, abc_mode: "melody" },
+      });
+
+      const body = JSON.parse(String(calls[0]?.init.body));
+      expect(body).toEqual({
+        model: "song2",
+        prompt: "bright J-pop, female vocal, piano",
+        lyrics: "[verse]\nla la la",
+        abc: ABC,
+        abc_mode: "melody",
+        seed: 9_007_199_254_740_991,
+        cfg_scale: 4,
+        return_abc: true,
+      });
+      expect(Object.keys(body)).toEqual([
+        "model",
+        "prompt",
+        "lyrics",
+        "abc",
+        "abc_mode",
+        "seed",
+        "cfg_scale",
+        "return_abc",
+      ]);
+    });
+
+    it.each([
+      ["abc_mode", ["full", "melody", "off"]],
+      ["seed", [0, 1, 9_007_199_254_740_991]],
+      ["cfg_scale", [0, 1.5, 20]],
+      ["return_abc", [true, false]],
+    ])("accepts the documented values of %s", (key, values) => {
+      const client = settlingClient([]);
+
+      for (const value of values) {
+        expect(() => client.validate({ ...songRequest, parameters: { [key]: value } })).not.toThrow();
+      }
+    });
+
+    it.each([
+      ["abc_mode", ["loud", "FULL", "", 1, true]],
+      ["seed", [-1, 1.5, 9_007_199_254_740_992, "7", true, Number.NaN, Number.POSITIVE_INFINITY]],
+      ["cfg_scale", [-0.1, 20.1, "1", true, Number.NaN, Number.POSITIVE_INFINITY]],
+      ["return_abc", ["true", 1, 0]],
+    ])("rejects out-of-contract values of %s before any request", async (key, values) => {
+      const calls: FetchCall[] = [];
+      const client = settlingClient(calls);
+
+      for (const value of values) {
+        const request = { ...songRequest, parameters: { [key]: value } };
+        expect(() => client.validate(request), JSON.stringify([key, value])).toThrow(GenerationValidationError);
+        await expect(client.generateResult(request)).rejects.toBeInstanceOf(GenerationValidationError);
+      }
+      expect(calls).toHaveLength(0);
+    });
+
+    it.each(["n", "cot", "abc"])("does not open %s as a parameter", (key) => {
+      const client = settlingClient([]);
+
+      expect(() => client.validate({ ...songRequest, parameters: { [key]: 2 } })).toThrow(
+        expect.objectContaining({ message: `Unknown parameter: ${key}` }),
+      );
+    });
+
+    it("declares every parameter as optional without a default", () => {
+      const parameters = settlingClient([]).getModel("song2")?.parameters ?? {};
+
+      expect(Object.keys(parameters)).toEqual(["abc_mode", "seed", "cfg_scale", "return_abc"]);
+      for (const spec of Object.values(parameters)) {
+        expect(spec.optional).toBe(true);
+        expect(spec).not.toHaveProperty("default");
+      }
+    });
+  });
+
+  describe("score output", () => {
+    const completedWith = (abc: unknown) =>
+      clientWith(
+        [],
+        json({ id: "task-1", status: "queued", usage: { cost: 0.3 } }),
+        json({ id: "task-1", status: "completed", audio_url: AUDIO_URL, abc, usage: { cost: 0.3 } }),
+      );
+
+    it("appends the score as an abc text block after the audio block, with the task id", async () => {
+      const result = await completedWith(ABC).generateResult({
+        ...songRequest,
+        parameters: { return_abc: true },
+      });
+
+      expect(result).toEqual({
+        content: [
+          { type: "audio", source: { type: "url", url: AUDIO_URL }, meta: { task_id: "task-1", status: "succeeded" } },
+          { type: "text", text: ABC, meta: { role: "abc", task_id: "task-1" } },
+        ],
+        cost: 0.3,
+      });
+    });
+
+    it("returns the score exactly as received", async () => {
+      const raw = `${ABC}\n\n`;
+
+      const result = await completedWith(raw).generateResult(songRequest);
+
+      expect(result.content[1]).toMatchObject({ type: "text", text: raw });
+    });
+
+    it("does not add a score block while the task is still running", async () => {
+      vi.useFakeTimers();
+      const client = clientWith(
+        [],
+        json({ id: "task-1", status: "queued" }),
+        json({ id: "task-1", status: "in_progress", abc: ABC }),
+        json({ id: "task-1", status: "completed", audio_url: AUDIO_URL }),
+      );
+
+      const promise = client.generateResult(songRequest);
+      await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
+
+      await expect(promise).resolves.toMatchObject({ content: [{ type: "audio" }] });
+      expect((await promise).content).toHaveLength(1);
+    });
+
+    it("still reports a failed task as a provider error when it carries a score", async () => {
+      const client = clientWith(
+        [],
+        json({ id: "task-1", status: "queued" }),
+        json({ id: "task-1", status: "failed", abc: ABC, error: { code: "generation_failed", message: "no" } }),
+      );
+
+      await expect(client.generateResult(songRequest)).rejects.toMatchObject({ name: "GenerationProviderError" });
+    });
+
+    it("accepts the returned score block as the abc input of the next request", async () => {
+      const first = await completedWith(ABC).generateResult({ ...songRequest, parameters: { return_abc: true } });
+      const returned = first.content.find((block) => block.type === "text");
+      if (!returned) throw new Error("expected a score block");
+      const calls: FetchCall[] = [];
+
+      await settlingClient(calls).generateResult({
+        model: "song2",
+        content: [styleBlock, lyricsBlock, returned],
+        parameters: { abc_mode: "melody" },
+      });
+
+      expect(JSON.parse(String(calls[0]?.init.body))).toMatchObject({ abc: ABC, abc_mode: "melody" });
+    });
+  });
+
+  describe("conflicting score settings", () => {
+    const abcContent = [styleBlock, lyricsBlock, textBlock("abc", ABC)];
+
+    it.each([
+      ["a score", { model: "song2", content: abcContent, parameters: { abc_mode: "off" } }],
+      ["return_abc true", { ...songRequest, parameters: { abc_mode: "off", return_abc: true } }],
+      [
+        "a score and return_abc true",
+        { model: "song2", content: abcContent, parameters: { abc_mode: "off", return_abc: true } },
+      ],
+    ])("rejects abc_mode off with %s before any request", async (_name, request) => {
+      const calls: FetchCall[] = [];
+      const client = settlingClient(calls);
+
+      expect(() => client.validate(request)).toThrow(GenerationValidationError);
+      await expect(client.generateResult(request)).rejects.toBeInstanceOf(GenerationValidationError);
+      expect(calls).toHaveLength(0);
+    });
+
+    it.each([
+      ["off without a score", { ...songRequest, parameters: { abc_mode: "off" } }],
+      ["off with return_abc false", { ...songRequest, parameters: { abc_mode: "off", return_abc: false } }],
+      ["melody with a score", { model: "song2", content: abcContent, parameters: { abc_mode: "melody" } }],
+      [
+        "full with a score and return_abc",
+        { model: "song2", content: abcContent, parameters: { abc_mode: "full", return_abc: true } },
+      ],
+    ])("accepts %s", async (_name, request) => {
+      const calls: FetchCall[] = [];
+
+      await settlingClient(calls).generateResult(request);
+
+      expect(calls).toHaveLength(2);
     });
   });
 

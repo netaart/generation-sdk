@@ -13,8 +13,9 @@ const REQUEST_TIMEOUT_MS = 60_000;
 const POLL_INTERVAL_SEC = 5;
 // Must outlast the server's 20-minute song2 task timeout, or the SDK gives up before the task is settled and refunded.
 const MAX_WAIT_SEC = 21 * 60;
-// The server counts runes of the trimmed text and rejects longer prompt or lyrics with a 400.
+// The server counts runes of the trimmed text and rejects longer prompt, lyrics or score with a 400.
 const MAX_TEXT_CHARS = 2000;
+const MAX_ABC_CHARS = 64_000;
 
 type TextBlock = Extract<GenerationContentBlock, { type: "text" }>;
 
@@ -26,20 +27,32 @@ function asString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
-function songText(input: ResolvedGenerationRequest): { prompt: string; lyrics: string } {
+// The request body is the one place that decides which keys exist: optional keys are added only when they have a value.
+function songBody(input: ResolvedGenerationRequest): Record<string, unknown> {
   const model = input.declaration.model;
   const texts = input.request.content.filter((block): block is TextBlock => block.type === "text");
-  const pick = (role: "prompt" | "lyrics"): string => {
+  const pick = (role: "prompt" | "lyrics" | "abc", maxChars: number, required: boolean): string | undefined => {
     const [block, extra] = texts.filter((candidate) => candidate.meta?.role === role);
-    if (!block || extra) throw new GenerationValidationError(`${model} requires exactly one ${role} text block`);
+    if (extra || (!block && required)) {
+      const rule = required ? "requires exactly" : "accepts at most";
+      throw new GenerationValidationError(`${model} ${rule} one ${role} text block`);
+    }
+    if (!block) return undefined;
     const text = block.text.trim();
     if (!text) throw new GenerationValidationError(`${role} must not be empty for ${model}`);
-    if ([...text].length > MAX_TEXT_CHARS) {
-      throw new GenerationValidationError(`${role} must be at most ${MAX_TEXT_CHARS} characters for ${model}`);
+    if ([...text].length > maxChars) {
+      throw new GenerationValidationError(`${role} must be at most ${maxChars} characters for ${model}`);
     }
     return text;
   };
-  return { prompt: pick("prompt"), lyrics: pick("lyrics") };
+  const prompt = pick("prompt", MAX_TEXT_CHARS, true);
+  const lyrics = pick("lyrics", MAX_TEXT_CHARS, true);
+  const abc = pick("abc", MAX_ABC_CHARS, false);
+  const { abc_mode, seed, cfg_scale, return_abc } = input.parameters;
+  if (abc_mode === "off" && (abc !== undefined || return_abc === true)) {
+    throw new GenerationValidationError(`${model} cannot use abc_mode off with an abc text block or return_abc true`);
+  }
+  return compactObject({ model, prompt, lyrics, abc, abc_mode, seed, cfg_scale, return_abc });
 }
 
 async function requestJson(input: GenerationAdapterInput, path: string, init: RequestInit): Promise<unknown> {
@@ -68,10 +81,9 @@ async function requestJson(input: GenerationAdapterInput, path: string, init: Re
 }
 
 async function generateSong(input: GenerationAdapterInput): Promise<GenerationContentBlock[]> {
-  const { prompt, lyrics } = songText(input);
   const submitted = await requestJson(input, "/v1/audio/generations", {
     method: "POST",
-    body: JSON.stringify({ model: input.declaration.model, prompt, lyrics }),
+    body: JSON.stringify(songBody(input)),
   });
   const taskId = isRecord(submitted) ? asString(submitted.id) : undefined;
   if (!taskId) {
@@ -89,9 +101,14 @@ async function generateSong(input: GenerationAdapterInput): Promise<GenerationCo
             details: { taskId, task },
           });
         }
-        return [
+        const blocks: GenerationContentBlock[] = [
           { type: "audio", source: { type: "url", url: audioUrl }, meta: { task_id: taskId, status: "succeeded" } },
         ];
+        // Verbatim: the caller edits the score and sends it back as the abc input.
+        if (typeof task.abc === "string" && task.abc.trim()) {
+          blocks.push({ type: "text", text: task.abc, meta: { role: "abc", task_id: taskId } });
+        }
+        return blocks;
       }
       case "failed": {
         const error = isRecord(task.error) ? task.error : undefined;
@@ -111,6 +128,6 @@ async function generateSong(input: GenerationAdapterInput): Promise<GenerationCo
 
 export const audioGenerationsAdapter: GenerationAdapter = Object.assign(generateSong, {
   validate(input: ResolvedGenerationRequest): void {
-    songText(input);
+    songBody(input);
   },
 });
