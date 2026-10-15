@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { GenerationValidationError } from "../../src/errors.js";
-import { createGenerationClient, type GenerationContentBlock } from "../../src/index.js";
+import {
+  createGenerationClient,
+  type GenerationContentBlock,
+  type GenerationModelDeclaration,
+} from "../../src/index.js";
 
 type FetchCall = { url: string; init: RequestInit };
 
@@ -550,6 +554,53 @@ describe("song2 generation", () => {
       });
 
       expect(JSON.parse(String(calls[0]?.init.body))).toMatchObject({ abc: ABC, abc_mode: "melody" });
+    });
+  });
+
+  describe("against the declaration published before the score", () => {
+    // The platform keeps serving this declaration until the new one is saved, while the adapter is already new.
+    const previousDeclaration: GenerationModelDeclaration = {
+      schema: "neta.generation.model.v1",
+      model: "song2",
+      title: "Song 2",
+      category: "audio",
+      description: "Generates a full song with vocals from a style description and lyrics.",
+      adapter: { type: "newapi.audioGenerations" },
+      content: {
+        input: [{ type: "text", required: true, min: 2, max: 2, roles: ["prompt", "lyrics"], roleRequired: true }],
+      },
+    };
+
+    function previousClient(calls: FetchCall[]) {
+      return createGenerationClient({
+        apiKey: "key",
+        models: [previousDeclaration],
+        includeBuiltinModels: false,
+        fetch: taskFetch(
+          calls,
+          json({ id: "task-1", status: "queued" }),
+          json({ id: "task-1", status: "completed", audio_url: AUDIO_URL }),
+        ),
+      });
+    }
+
+    it("sends an old request unchanged", async () => {
+      const calls: FetchCall[] = [];
+
+      const result = await previousClient(calls).generateResult(songRequest);
+
+      expect(calls[0]?.init.body).toBe(OLD_REQUEST_BODY);
+      expect(result.content).toHaveLength(1);
+    });
+
+    it.each([
+      ["a score", { model: "song2", content: [styleBlock, lyricsBlock, textBlock("abc", ABC)] }],
+      ["a parameter", { ...songRequest, parameters: { return_abc: true } }],
+    ])("rejects %s loudly before any request instead of dropping it", async (_name, request) => {
+      const calls: FetchCall[] = [];
+
+      await expect(previousClient(calls).generateResult(request)).rejects.toBeInstanceOf(GenerationValidationError);
+      expect(calls).toHaveLength(0);
     });
   });
 
