@@ -6,6 +6,7 @@ import { isScalar, isSeq, parseDocument, parse as parseYaml } from "yaml";
 import {
   createGenerationClient,
   exportBuiltinModelConfig,
+  type GenerationContentBlock,
   type GenerationModelDeclaration,
   parseGenerationModelDeclaration,
   readGenerationModelDeclarationsFromDirectory,
@@ -681,17 +682,52 @@ describe("config", () => {
   it("quotes every song2 abc_mode value so YAML 1.1 parsers read strings", async () => {
     const raw = await readFile(join(process.cwd(), "models", "song2.yaml"), "utf8");
 
-    // YAML 1.1 reads a bare off as false; the control shows the parser below discriminates.
+    // YAML 1.1 reads a bare off as false, so values stay quoted for when off is offered again; the control shows the
+    // parser below discriminates.
     expect(parseYaml("v: off", { version: "1.1" })).toEqual({ v: false });
-    expect(parseYaml(raw, { version: "1.1" }).parameters.abc_mode.enum).toEqual(["full", "melody", "off"]);
+    expect(parseYaml(raw, { version: "1.1" }).parameters.abc_mode.enum).toEqual(["full", "melody"]);
 
     const values = parseDocument(raw).getIn(["parameters", "abc_mode", "enum"], true);
     if (!isSeq(values)) throw new Error("abc_mode.enum is not a sequence");
     expect(values.items.map((value) => (isScalar(value) ? value.type : undefined))).toEqual([
       "QUOTE_DOUBLE",
       "QUOTE_DOUBLE",
-      "QUOTE_DOUBLE",
     ]);
+  });
+
+  it("does not declare song2 cfg_scale or abc_mode off yet", async () => {
+    const raw = await readFile(join(process.cwd(), "models", "song2.yaml"), "utf8");
+    const published = parseGenerationModelDeclaration(raw, "song2.yaml");
+    const builtin = createGenerationClient().getModel("song2");
+
+    for (const declaration of [published, builtin]) {
+      expect(Object.keys(declaration?.parameters ?? {})).toEqual(["abc_mode", "seed", "return_abc"]);
+      expect(declaration?.parameters?.abc_mode).toMatchObject({ enum: ["full", "melody"] });
+    }
+    expect(raw).not.toMatch(/cfg_scale|\boff\b/);
+  });
+
+  it("loads models/song2.yaml on its own and enforces what it declares", async () => {
+    const raw = await readFile(join(process.cwd(), "models", "song2.yaml"), "utf8");
+    const client = createGenerationClient({
+      apiKey: "test",
+      models: [parseGenerationModelDeclaration(raw, "song2.yaml")],
+      includeBuiltinModels: false,
+    });
+    const content: GenerationContentBlock[] = [
+      { type: "text", text: "bright J-pop", meta: { role: "prompt" } },
+      { type: "text", text: "[verse]\nla la la", meta: { role: "lyrics" } },
+    ];
+
+    expect(() =>
+      client.validate({ model: "song2", content, parameters: { abc_mode: "melody", seed: 7, return_abc: true } }),
+    ).not.toThrow();
+    expect(() => client.validate({ model: "song2", content, parameters: { cfg_scale: 1 } })).toThrow(
+      "Unknown parameter: cfg_scale",
+    );
+    expect(() => client.validate({ model: "song2", content, parameters: { abc_mode: "off" } })).toThrow(
+      "must be one of: full, melody",
+    );
   });
 
   it("exports model declarations", async () => {

@@ -1591,9 +1591,9 @@ const builtinModels = [
       abc_mode: {
         type: "string",
         optional: true,
-        enum: ["full", "melody", "off"],
+        enum: ["full", "melody"],
         description:
-          "How the song uses the ABC score. full follows a score with chords, melody follows only the melody, off plans no score. A score with chord marks is rejected in melody mode when the task runs; remove the chords or use full. Omitted, a given score is read for chord marks to pick full or melody, and without a score full is used. off cannot be combined with an abc block or return_abc true.",
+          "How the song uses the ABC score. full follows a score with chords, melody follows only the melody. A score with chord marks is rejected in melody mode when the task runs; remove the chords or use full. Omitted, a given score is read for chord marks to pick full or melody, and without a score full is used.",
       },
       seed: {
         type: "integer",
@@ -1601,13 +1601,6 @@ const builtinModels = [
         min: 0,
         max: Number.MAX_SAFE_INTEGER,
         description: "Random seed from 0 to 9007199254740991. Omit it for a different random seed on every request.",
-      },
-      cfg_scale: {
-        type: "number",
-        optional: true,
-        min: 0,
-        max: 20,
-        description: "Guidance strength from 0 to 20. Omit it for the model default.",
       },
       return_abc: {
         type: "boolean",

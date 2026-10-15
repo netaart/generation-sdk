@@ -57,6 +57,32 @@ function settlingClient(calls: FetchCall[]) {
   );
 }
 
+// song2 as it reads once cfg_scale and abc_mode off are offered again: the adapter must already handle both.
+function heldBackClient(calls: FetchCall[]) {
+  const declaration = createGenerationClient({ apiKey: "key" }).getModel("song2");
+  const abcMode = declaration?.parameters?.abc_mode;
+  if (!declaration || abcMode?.type !== "string") throw new Error("song2 declares no string abc_mode");
+  return createGenerationClient({
+    apiKey: "key",
+    models: [
+      {
+        ...declaration,
+        parameters: {
+          ...declaration.parameters,
+          abc_mode: { ...abcMode, enum: [...(abcMode.enum ?? []), "off"] },
+          cfg_scale: { type: "number", optional: true, min: 0, max: 20 },
+        },
+      },
+    ],
+    includeBuiltinModels: false,
+    fetch: taskFetch(
+      calls,
+      json({ id: "task-1", status: "queued" }),
+      json({ id: "task-1", status: "completed", audio_url: AUDIO_URL }),
+    ),
+  });
+}
+
 // Reports whether the promise has settled, without turning a rejection into an unhandled one.
 function watch(promise: Promise<unknown>): { settled: () => boolean } {
   let settled = false;
@@ -377,7 +403,6 @@ describe("song2 generation", () => {
     it.each([
       ["abc_mode", "melody"],
       ["seed", 42],
-      ["cfg_scale", 3.5],
       ["return_abc", true],
     ])("adds only %s to the request body when it is the one parameter given", async (key, value) => {
       const calls: FetchCall[] = [];
@@ -397,10 +422,10 @@ describe("song2 generation", () => {
 
       await settlingClient(calls).generateResult({
         ...songRequest,
-        parameters: { seed: 0, cfg_scale: 0, return_abc: false },
+        parameters: { seed: 0, return_abc: false },
       });
 
-      expect(JSON.parse(String(calls[0]?.init.body))).toMatchObject({ seed: 0, cfg_scale: 0, return_abc: false });
+      expect(JSON.parse(String(calls[0]?.init.body))).toMatchObject({ seed: 0, return_abc: false });
     });
 
     it("sends the score and every parameter after style and lyrics in a fixed order", async () => {
@@ -409,7 +434,7 @@ describe("song2 generation", () => {
       await settlingClient(calls).generateResult({
         model: "song2",
         content: [styleBlock, lyricsBlock, textBlock("abc", ABC)],
-        parameters: { return_abc: true, cfg_scale: 4, seed: 9_007_199_254_740_991, abc_mode: "melody" },
+        parameters: { return_abc: true, seed: 9_007_199_254_740_991, abc_mode: "melody" },
       });
 
       const body = JSON.parse(String(calls[0]?.init.body));
@@ -420,25 +445,14 @@ describe("song2 generation", () => {
         abc: ABC,
         abc_mode: "melody",
         seed: 9_007_199_254_740_991,
-        cfg_scale: 4,
         return_abc: true,
       });
-      expect(Object.keys(body)).toEqual([
-        "model",
-        "prompt",
-        "lyrics",
-        "abc",
-        "abc_mode",
-        "seed",
-        "cfg_scale",
-        "return_abc",
-      ]);
+      expect(Object.keys(body)).toEqual(["model", "prompt", "lyrics", "abc", "abc_mode", "seed", "return_abc"]);
     });
 
     it.each([
-      ["abc_mode", ["full", "melody", "off"]],
+      ["abc_mode", ["full", "melody"]],
       ["seed", [0, 1, 9_007_199_254_740_991]],
-      ["cfg_scale", [0, 1.5, 20]],
       ["return_abc", [true, false]],
     ])("accepts the documented values of %s", (key, values) => {
       const client = settlingClient([]);
@@ -449,9 +463,8 @@ describe("song2 generation", () => {
     });
 
     it.each([
-      ["abc_mode", ["loud", "FULL", "", 1, true]],
+      ["abc_mode", ["loud", "FULL", "off", "", 1, true]],
       ["seed", [-1, 1.5, 9_007_199_254_740_992, "7", true, Number.NaN, Number.POSITIVE_INFINITY]],
-      ["cfg_scale", [-0.1, 20.1, "1", true, Number.NaN, Number.POSITIVE_INFINITY]],
       ["return_abc", ["true", 1, 0]],
     ])("rejects out-of-contract values of %s before any request", async (key, values) => {
       const calls: FetchCall[] = [];
@@ -465,7 +478,7 @@ describe("song2 generation", () => {
       expect(calls).toHaveLength(0);
     });
 
-    it.each(["n", "cot", "abc"])("does not open %s as a parameter", (key) => {
+    it.each(["n", "cot", "abc", "cfg_scale"])("does not open %s as a parameter", (key) => {
       const client = settlingClient([]);
 
       expect(() => client.validate({ ...songRequest, parameters: { [key]: 2 } })).toThrow(
@@ -476,7 +489,7 @@ describe("song2 generation", () => {
     it("declares every parameter as optional without a default", () => {
       const parameters = settlingClient([]).getModel("song2")?.parameters ?? {};
 
-      expect(Object.keys(parameters)).toEqual(["abc_mode", "seed", "cfg_scale", "return_abc"]);
+      expect(Object.keys(parameters)).toEqual(["abc_mode", "seed", "return_abc"]);
       for (const spec of Object.values(parameters)) {
         expect(spec.optional).toBe(true);
         expect(spec).not.toHaveProperty("default");
@@ -643,24 +656,6 @@ examples:
     const abcContent = [styleBlock, lyricsBlock, textBlock("abc", ABC)];
 
     it.each([
-      ["a score", { model: "song2", content: abcContent, parameters: { abc_mode: "off" } }],
-      ["return_abc true", { ...songRequest, parameters: { abc_mode: "off", return_abc: true } }],
-      [
-        "a score and return_abc true",
-        { model: "song2", content: abcContent, parameters: { abc_mode: "off", return_abc: true } },
-      ],
-    ])("rejects abc_mode off with %s before any request", async (_name, request) => {
-      const calls: FetchCall[] = [];
-      const client = settlingClient(calls);
-
-      expect(() => client.validate(request)).toThrow(GenerationValidationError);
-      await expect(client.generateResult(request)).rejects.toBeInstanceOf(GenerationValidationError);
-      expect(calls).toHaveLength(0);
-    });
-
-    it.each([
-      ["off without a score", { ...songRequest, parameters: { abc_mode: "off" } }],
-      ["off with return_abc false", { ...songRequest, parameters: { abc_mode: "off", return_abc: false } }],
       ["melody with a score", { model: "song2", content: abcContent, parameters: { abc_mode: "melody" } }],
       [
         "full with a score and return_abc",
@@ -672,6 +667,134 @@ examples:
       await settlingClient(calls).generateResult(request);
 
       expect(calls).toHaveLength(2);
+    });
+  });
+
+  // cfg_scale and abc_mode off are not offered yet. The adapter keeps mapping and checking them, so offering them again
+  // is a change to the declaration alone.
+  describe("cfg_scale and abc_mode off", () => {
+    const abcContent = [styleBlock, lyricsBlock, textBlock("abc", ABC)];
+
+    it.each([
+      ["cfg_scale 3", { cfg_scale: 3 }, "Unknown parameter: cfg_scale"],
+      ["cfg_scale 1", { cfg_scale: 1 }, "Unknown parameter: cfg_scale"],
+      ["abc_mode off", { abc_mode: "off" }, "must be one of: full, melody"],
+    ])("are not offered by the declaration, so %s is rejected before any request", async (_name, parameters, message) => {
+      const calls: FetchCall[] = [];
+      const client = settlingClient(calls);
+      const request = { ...songRequest, parameters };
+
+      expect(() => client.validate(request)).toThrow(message);
+      await expect(client.generateResult(request)).rejects.toBeInstanceOf(GenerationValidationError);
+      expect(calls).toHaveLength(0);
+    });
+
+    describe("once the declaration offers them", () => {
+      it.each([
+        ["cfg_scale", 3.5],
+        ["abc_mode", "off"],
+      ])("adds only %s to the request body when it is the one parameter given", async (key, value) => {
+        const calls: FetchCall[] = [];
+
+        await heldBackClient(calls).generateResult({ ...songRequest, parameters: { [key]: value } });
+
+        expect(JSON.parse(String(calls[0]?.init.body))).toEqual({
+          model: "song2",
+          prompt: "bright J-pop, female vocal, piano",
+          lyrics: "[verse]\nla la la",
+          [key]: value,
+        });
+      });
+
+      it("sends cfg_scale zero, which is a value and not absence", async () => {
+        const calls: FetchCall[] = [];
+
+        await heldBackClient(calls).generateResult({ ...songRequest, parameters: { cfg_scale: 0 } });
+
+        expect(JSON.parse(String(calls[0]?.init.body))).toMatchObject({ cfg_scale: 0 });
+      });
+
+      it("sends the score and every parameter after style and lyrics in a fixed order", async () => {
+        const calls: FetchCall[] = [];
+
+        await heldBackClient(calls).generateResult({
+          model: "song2",
+          content: abcContent,
+          parameters: { return_abc: true, cfg_scale: 4, seed: 9_007_199_254_740_991, abc_mode: "melody" },
+        });
+
+        const body = JSON.parse(String(calls[0]?.init.body));
+        expect(body).toEqual({
+          model: "song2",
+          prompt: "bright J-pop, female vocal, piano",
+          lyrics: "[verse]\nla la la",
+          abc: ABC,
+          abc_mode: "melody",
+          seed: 9_007_199_254_740_991,
+          cfg_scale: 4,
+          return_abc: true,
+        });
+        expect(Object.keys(body)).toEqual([
+          "model",
+          "prompt",
+          "lyrics",
+          "abc",
+          "abc_mode",
+          "seed",
+          "cfg_scale",
+          "return_abc",
+        ]);
+      });
+
+      it.each([
+        ["abc_mode", ["full", "melody", "off"]],
+        ["cfg_scale", [0, 1.5, 20]],
+      ])("accepts the documented values of %s", (key, values) => {
+        const client = heldBackClient([]);
+
+        for (const value of values) {
+          expect(() => client.validate({ ...songRequest, parameters: { [key]: value } })).not.toThrow();
+        }
+      });
+
+      it("rejects out-of-contract values of cfg_scale before any request", async () => {
+        const calls: FetchCall[] = [];
+        const client = heldBackClient(calls);
+
+        for (const value of [-0.1, 20.1, "1", true, Number.NaN, Number.POSITIVE_INFINITY]) {
+          const request = { ...songRequest, parameters: { cfg_scale: value } };
+          expect(() => client.validate(request), JSON.stringify(value)).toThrow(GenerationValidationError);
+          await expect(client.generateResult(request)).rejects.toBeInstanceOf(GenerationValidationError);
+        }
+        expect(calls).toHaveLength(0);
+      });
+
+      it.each([
+        ["a score", { model: "song2", content: abcContent, parameters: { abc_mode: "off" } }],
+        ["return_abc true", { ...songRequest, parameters: { abc_mode: "off", return_abc: true } }],
+        [
+          "a score and return_abc true",
+          { model: "song2", content: abcContent, parameters: { abc_mode: "off", return_abc: true } },
+        ],
+      ])("rejects abc_mode off with %s before any request", async (_name, request) => {
+        const calls: FetchCall[] = [];
+        const client = heldBackClient(calls);
+
+        expect(() => client.validate(request)).toThrow(GenerationValidationError);
+        await expect(client.generateResult(request)).rejects.toBeInstanceOf(GenerationValidationError);
+        expect(calls).toHaveLength(0);
+      });
+
+      it.each([
+        ["off without a score", { ...songRequest, parameters: { abc_mode: "off" } }],
+        ["off with return_abc false", { ...songRequest, parameters: { abc_mode: "off", return_abc: false } }],
+      ])("accepts %s", async (_name, request) => {
+        const calls: FetchCall[] = [];
+
+        await heldBackClient(calls).generateResult(request);
+
+        expect(calls).toHaveLength(2);
+      });
     });
   });
 
