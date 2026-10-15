@@ -730,6 +730,14 @@ describe("config", () => {
     );
   });
 
+  it("does not offer song2 cfg_scale or abc_mode off in the README", async () => {
+    const readme = await readFile(join(process.cwd(), "README.md"), "utf8");
+    const section = readme.slice(readme.indexOf("`song2` generates"), readme.indexOf("## 3D generation"));
+
+    expect(section).toContain("| `abc_mode` |");
+    expect(section).not.toMatch(/cfg_scale|\boff\b/);
+  });
+
   it("exports model declarations", async () => {
     const dir = await mkdtemp(join(tmpdir(), "generation-"));
     try {
