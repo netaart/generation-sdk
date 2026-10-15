@@ -2,6 +2,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { isScalar, isSeq, parseDocument, parse as parseYaml } from "yaml";
 import {
   createGenerationClient,
   exportBuiltinModelConfig,
@@ -675,6 +676,22 @@ describe("config", () => {
         .map((model) => model.model)
         .sort(),
     );
+  });
+
+  it("quotes every song2 abc_mode value so YAML 1.1 parsers read strings", async () => {
+    const raw = await readFile(join(process.cwd(), "models", "song2.yaml"), "utf8");
+
+    // YAML 1.1 reads a bare off as false; the control shows the parser below discriminates.
+    expect(parseYaml("v: off", { version: "1.1" })).toEqual({ v: false });
+    expect(parseYaml(raw, { version: "1.1" }).parameters.abc_mode.enum).toEqual(["full", "melody", "off"]);
+
+    const values = parseDocument(raw).getIn(["parameters", "abc_mode", "enum"], true);
+    if (!isSeq(values)) throw new Error("abc_mode.enum is not a sequence");
+    expect(values.items.map((value) => (isScalar(value) ? value.type : undefined))).toEqual([
+      "QUOTE_DOUBLE",
+      "QUOTE_DOUBLE",
+      "QUOTE_DOUBLE",
+    ]);
   });
 
   it("exports model declarations", async () => {
