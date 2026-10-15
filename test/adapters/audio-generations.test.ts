@@ -3,7 +3,7 @@ import { GenerationValidationError } from "../../src/errors.js";
 import {
   createGenerationClient,
   type GenerationContentBlock,
-  type GenerationModelDeclaration,
+  parseGenerationModelDeclaration,
 } from "../../src/index.js";
 
 type FetchCall = { url: string; init: RequestInit };
@@ -558,18 +558,45 @@ describe("song2 generation", () => {
   });
 
   describe("against the declaration published before the score", () => {
-    // The platform keeps serving this declaration until the new one is saved, while the adapter is already new.
-    const previousDeclaration: GenerationModelDeclaration = {
-      schema: "neta.generation.model.v1",
-      model: "song2",
-      title: "Song 2",
-      category: "audio",
-      description: "Generates a full song with vocals from a style description and lyrics.",
-      adapter: { type: "newapi.audioGenerations" },
-      content: {
-        input: [{ type: "text", required: true, min: 2, max: 2, roles: ["prompt", "lyrics"], roleRequired: true }],
-      },
-    };
+    // models/song2.yaml as published before the score: the platform keeps serving it until the new one is saved,
+    // while the adapter is already new.
+    const previousDeclaration = parseGenerationModelDeclaration(
+      `schema: neta.generation.model.v1
+model: song2
+title: Song 2
+category: audio
+description: Generates a full song with vocals from a style description and lyrics. Both texts are required and capped at 2000 characters each. Generation is asynchronous and can take several minutes.
+adapter:
+  type: newapi.audioGenerations
+content:
+  input:
+    - type: text
+      required: true
+      min: 2
+      max: 2
+      roles:
+        - prompt
+        - lyrics
+      roleRequired: true
+      description: Exactly two text blocks. Use meta.role prompt for the style description and meta.role lyrics for the lyrics to sing.
+examples:
+  - title: Song from style and lyrics
+    request:
+      model: song2
+      content:
+        - type: text
+          text: bright J-pop, female vocal, piano
+          meta:
+            role: prompt
+        - type: text
+          text: |-
+            [verse]
+            la la la
+          meta:
+            role: lyrics
+`,
+      "song2.yaml",
+    );
 
     function previousClient(calls: FetchCall[]) {
       return createGenerationClient({
