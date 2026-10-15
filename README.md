@@ -553,9 +553,10 @@ Suno uses one shared adapter with a small public model set: `suno_music_chirp_fe
 
 `suno_music` is removed in this release. Migrate to a concrete model name and stop sending `parameters.operation` or `meta.task`.
 
-`song2` generates a full song with vocals through `newapi.audioGenerations`. Send exactly two text blocks and mark them
-with `meta.role`: `prompt` for the style description and `lyrics` for the words to sing. Each text is trimmed and
-must be 1 to 2000 characters. The call polls the task for up to 21 minutes and returns one audio block.
+`song2` generates a full song with vocals through `newapi.audioGenerations`. Send a style description and lyrics as
+text blocks and mark them with `meta.role`: `prompt` for the style description and `lyrics` for the words to sing. Each
+text is trimmed and must be 1 to 2000 characters. The call polls the task for up to 21 minutes and returns one audio
+block.
 
 ```ts
 const result = await client.generateResult({
@@ -567,6 +568,51 @@ const result = await client.generateResult({
 });
 
 console.log(result.content, result.cost);
+```
+
+To make the song follow a melody, add a third text block with `meta.role` `abc` that holds an ABC notation score. It is
+trimmed and must be 1 to 64000 characters, and at most one is allowed. Write it in the notation `song2` returns: a score
+in another ABC dialect is rejected when the task runs, and the failed task's error message says what is wrong. Four
+optional parameters shape the song. Each is sent only when you set it, and none has a default, so a request without them
+is the same as before.
+
+| Parameter | Values | Effect |
+| --- | --- | --- |
+| `abc_mode` | `full`, `melody`, `off` | `full` follows a score with chords, `melody` follows only the melody, `off` plans no score. Omitted, a given score is read for chord marks to pick `full` or `melody`, and without a score `full` is used |
+| `seed` | integer, 0 to 9007199254740991 | Fixes the random seed. Omitted, every request uses a different one |
+| `cfg_scale` | number, 0 to 20 | Guidance strength. Omitted, the model default applies |
+| `return_abc` | boolean | `true` returns the score the song used |
+
+`abc_mode: "off"` cannot be combined with an `abc` block or `return_abc: true`. A blank or over-long `abc`, a second
+`abc` block, and out-of-range parameter values are rejected with `GenerationValidationError` before anything is
+submitted, so no cost is incurred.
+
+With `return_abc: true` the result carries a second block after the audio: a `text` block with `meta.role` `abc` and the
+`task_id`. Its text is the score exactly as received, so you can edit it and send it back as the `abc` block of the next
+request.
+
+```ts
+const first = await client.generateResult({
+  model: "song2",
+  content: [
+    { type: "text", text: "bright J-pop, female vocal, piano", meta: { role: "prompt" } },
+    { type: "text", text: "[verse]\nla la la", meta: { role: "lyrics" } },
+  ],
+  parameters: { return_abc: true, seed: 7 },
+});
+
+const score = first.content.find((block) => block.type === "text" && block.meta?.role === "abc");
+if (score?.type !== "text") throw new Error("No score returned");
+
+const again = await client.generateResult({
+  model: "song2",
+  content: [
+    { type: "text", text: "bright J-pop, female vocal, piano", meta: { role: "prompt" } },
+    { type: "text", text: "[verse]\nla la la", meta: { role: "lyrics" } },
+    { type: "text", text: score.text.replace("Q:1/4=140", "Q:1/4=120"), meta: { role: "abc" } },
+  ],
+  parameters: { abc_mode: "melody" },
+});
 ```
 
 ## 3D generation
