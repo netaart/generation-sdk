@@ -13,7 +13,8 @@ const REQUEST_TIMEOUT_MS = 60_000;
 const POLL_INTERVAL_SEC = 5;
 // Must outlast the server's 20-minute song2 task timeout, or the SDK gives up before the task is settled and refunded.
 const MAX_WAIT_SEC = 21 * 60;
-// The server counts runes of the trimmed text and rejects longer prompt, lyrics or score with a 400.
+// The server rejects a longer prompt, lyrics or score with a 400. It counts runes after trimming prompt and lyrics but
+// counts the score as received; the SDK sends the trimmed text, so its limits are never looser than the server's.
 const MAX_TEXT_CHARS = 2000;
 const MAX_ABC_CHARS = 64_000;
 

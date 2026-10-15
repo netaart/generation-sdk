@@ -578,7 +578,7 @@ is the same as before.
 
 | Parameter | Values | Effect |
 | --- | --- | --- |
-| `abc_mode` | `full`, `melody`, `off` | `full` follows a score with chords, `melody` follows only the melody, `off` plans no score. Omitted, a given score is read for chord marks to pick `full` or `melody`, and without a score `full` is used |
+| `abc_mode` | `full`, `melody`, `off` | `full` follows a score with chords, `melody` follows only the melody, `off` plans no score. A score with chord marks is rejected in `melody` mode when the task runs; remove the chords or use `full`. Omitted, a given score is read for chord marks to pick `full` or `melody`, and without a score `full` is used |
 | `seed` | integer, 0 to 9007199254740991 | Fixes the random seed. Omitted, every request uses a different one |
 | `cfg_scale` | number, 0 to 20 | Guidance strength. Omitted, the model default applies |
 | `return_abc` | boolean | `true` returns the score the song used |
@@ -589,7 +589,8 @@ submitted, so no cost is incurred.
 
 With `return_abc: true` the result carries a second block after the audio: a `text` block with `meta.role` `abc` and the
 `task_id`. Its text is the score exactly as received, so you can edit it and send it back as the `abc` block of the next
-request.
+request. If the score has chord marks, as the score of a `full` song does, send it back with `abc_mode` omitted (it is
+read as `full`) or set to `full`; `melody` rejects it.
 
 ```ts
 const first = await client.generateResult({
@@ -609,9 +610,8 @@ const again = await client.generateResult({
   content: [
     { type: "text", text: "bright J-pop, female vocal, piano", meta: { role: "prompt" } },
     { type: "text", text: "[verse]\nla la la", meta: { role: "lyrics" } },
-    { type: "text", text: score.text.replace("Q:1/4=140", "Q:1/4=120"), meta: { role: "abc" } },
+    { type: "text", text: score.text.replace(/^Q:.*$/m, "Q:1/4=120"), meta: { role: "abc" } },
   ],
-  parameters: { abc_mode: "melody" },
 });
 ```
 
