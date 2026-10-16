@@ -1571,7 +1571,7 @@ const builtinModels = [
     title: "Song 2",
     category: "audio",
     description:
-      "Generates a full song with vocals from a style description and lyrics, optionally following an ABC notation score. The style description and lyrics are required and capped at 2000 characters each; the score is optional and capped at 64000. Generation is asynchronous and can take several minutes.",
+      "Full-song generation with vocals from a style description and lyrics, optionally following an ABC score. Produces one MP3 per request.",
     adapter: { type: "newapi.audioGenerations" },
     content: {
       input: [
@@ -1583,7 +1583,7 @@ const builtinModels = [
           roles: ["prompt", "lyrics", "abc"],
           roleRequired: true,
           description:
-            "Two or three text blocks. Use meta.role prompt for the style description and meta.role lyrics for the lyrics to sing, plus an optional meta.role abc block with an ABC notation score for the song to follow.",
+            "Text blocks by meta.role: prompt is the style description and lyrics the words to sing, up to 2000 characters each; optional abc is a score in the model's own ABC dialect, such as one returned with return_abc, up to 64000 characters.",
         },
       ],
     },
@@ -1593,20 +1593,19 @@ const builtinModels = [
         optional: true,
         enum: ["full", "melody"],
         description:
-          "How the song uses the ABC score. full follows a score with chords, melody follows only the melody. A score with chord marks is rejected in melody mode when the task runs; remove the chords or use full. Omitted, a given score is read for chord marks to pick full or melody, and without a score full is used.",
+          "How a score is used: full follows its melody and chords; melody follows only the melody and rejects chord marks. Omitted: inferred from the score, else full.",
       },
       seed: {
         type: "integer",
         optional: true,
         min: 0,
         max: Number.MAX_SAFE_INTEGER,
-        description: "Random seed from 0 to 9007199254740991. Omit it for a different random seed on every request.",
+        description: "Random seed for reproducibility.",
       },
       return_abc: {
         type: "boolean",
         optional: true,
-        description:
-          "Return the ABC score the song used as a text block with meta.role abc after the audio block. Omit it to receive the song only.",
+        description: "Also return the score the song used, as a text block with meta.role abc.",
       },
     },
     examples: [
