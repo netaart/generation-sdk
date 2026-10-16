@@ -1,7 +1,7 @@
 schema: neta.generation.model.v1
 model: higgs-tts
 title: Higgs TTS
-description: 'Modes: built-in; one-reference high-fidelity clone; weighted 2-16-reference blend. Default: delegated generic voice (natural/suitable). Blend: all references, full text, one request. Conflict: clone + redesign; ask user, do not reinterpret. Dependency: clone prior generated audio.'
+description: 'High-fidelity voice cloning with multi-reference blending. Modes: built-in; one-reference high-fidelity clone; weighted 2-16-reference blend. Default: delegated generic voice (natural/suitable). Blend: all references, full text, one request. Conflict: clone + redesign; ask user, do not reinterpret. Dependency: clone prior generated audio.'
 adapter:
   type: openai.audioSpeech
 content:

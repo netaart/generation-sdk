@@ -11,6 +11,8 @@ const REQUEST_TIMEOUT_MS = 210_000;
 const QWEN_MODELS = new Set(["qwen-tts", "qwen-audio-3.0-tts-plus", "qwen-audio-3.0-tts-flash"]);
 const QWEN_AUDIO_3_MODELS = new Set(["qwen-audio-3.0-tts-plus", "qwen-audio-3.0-tts-flash"]);
 const HIGGS_MODEL = "higgs-tts";
+const BREEZE_MODEL = "breeze-tts-2";
+const INDEX_TTS_MODEL = "index-tts-2.5";
 
 type TextBlock = Extract<GenerationContentBlock, { type: "text" }>;
 type AudioBlock = Extract<GenerationContentBlock, { type: "audio" }>;
@@ -122,6 +124,61 @@ function validateHiggs(input: ResolvedGenerationRequest, text: TextBlock, audio:
   }
 }
 
+function nonEmptyMetaString(input: ResolvedGenerationRequest, key: string): string | undefined {
+  const value = input.meta[key];
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || !value.trim()) {
+    throw new GenerationValidationError(`${input.declaration.model} meta.${key} must be a non-empty string`);
+  }
+  return value;
+}
+
+function validateBreeze(input: ResolvedGenerationRequest, text: TextBlock, audio: AudioBlock[]): void {
+  if (audio.length > 1) {
+    throw new GenerationValidationError(`${input.declaration.model} supports at most one reference audio`);
+  }
+  const requestMetaKeys = new Set(["instruction", "ref_text"]);
+  validateMetaKeys("request.metadata", input.request.metadata, requestMetaKeys);
+  validateMetaKeys("request.meta", input.request.meta, requestMetaKeys);
+  validateMetaKeys("text content meta", text.meta, new Set());
+  for (const block of audio) validateMetaKeys("audio content meta", block.meta, new Set());
+
+  nonEmptyMetaString(input, "instruction");
+  const refText = nonEmptyMetaString(input, "ref_text");
+  if (refText !== undefined && audio.length === 0) {
+    throw new GenerationValidationError(`${input.declaration.model} meta.ref_text requires one reference audio`);
+  }
+
+  if (Array.from(text.text.trim()).length > 1000) {
+    throw new GenerationValidationError(`${input.declaration.model} accepts input of at most 1000 Unicode code points`);
+  }
+}
+
+function validateIndexTts(input: ResolvedGenerationRequest, text: TextBlock, audio: AudioBlock[]): void {
+  if (audio.length === 0) {
+    throw new GenerationValidationError(`${input.declaration.model} requires one reference audio`);
+  }
+  if (audio.length > 1) {
+    throw new GenerationValidationError(`${input.declaration.model} supports at most one reference audio`);
+  }
+  const requestMetaKeys = new Set(["emotion_audio", "emotion_text", "duration_factor", "language"]);
+  validateMetaKeys("request.metadata", input.request.metadata, requestMetaKeys);
+  validateMetaKeys("request.meta", input.request.meta, requestMetaKeys);
+  validateMetaKeys("text content meta", text.meta, new Set());
+  for (const block of audio) validateMetaKeys("audio content meta", block.meta, new Set());
+
+  const emotionAudio = input.meta.emotion_audio;
+  if (emotionAudio !== undefined) {
+    validateHttpUrl(emotionAudio, `${input.declaration.model} meta.emotion_audio`);
+  }
+  const emotionText = nonEmptyMetaString(input, "emotion_text");
+  if (emotionAudio !== undefined && emotionText !== undefined) {
+    throw new GenerationValidationError(
+      `${input.declaration.model} meta.emotion_audio and meta.emotion_text are mutually exclusive`,
+    );
+  }
+}
+
 function validateAudioSpeechRequest(input: ResolvedGenerationRequest): void {
   const { text, audio } = validateCommonContent(input);
   if (QWEN_MODELS.has(input.declaration.model)) {
@@ -130,6 +187,14 @@ function validateAudioSpeechRequest(input: ResolvedGenerationRequest): void {
   }
   if (input.declaration.model === HIGGS_MODEL) {
     validateHiggs(input, text, audio);
+    return;
+  }
+  if (input.declaration.model === BREEZE_MODEL) {
+    validateBreeze(input, text, audio);
+    return;
+  }
+  if (input.declaration.model === INDEX_TTS_MODEL) {
+    validateIndexTts(input, text, audio);
     return;
   }
   throw new GenerationValidationError(`Unsupported audio speech model: ${input.declaration.model}`);
@@ -151,6 +216,26 @@ function buildPayload(input: ResolvedGenerationRequest): Record<string, unknown>
   if (QWEN_MODELS.has(input.declaration.model)) {
     if (audio[0]?.source.type === "url") payload.ref_audio = audio[0].source.url.trim();
     else payload.metadata = { voice_prompt: input.meta.voice_prompt };
+    return payload;
+  }
+
+  if (input.declaration.model === BREEZE_MODEL) {
+    if (audio[0]?.source.type === "url") payload.ref_audio = audio[0].source.url.trim();
+    const metadata: Record<string, unknown> = {};
+    if (input.meta.instruction !== undefined) metadata.instruction = input.meta.instruction;
+    if (input.meta.ref_text !== undefined) metadata.ref_text = input.meta.ref_text;
+    if (Object.keys(metadata).length > 0) payload.metadata = metadata;
+    return payload;
+  }
+
+  if (input.declaration.model === INDEX_TTS_MODEL) {
+    if (audio[0]?.source.type === "url") payload.ref_audio = audio[0].source.url.trim();
+    const metadata: Record<string, unknown> = { language: input.meta.language };
+    const emotionAudio = input.meta.emotion_audio;
+    if (typeof emotionAudio === "string") metadata.emotion_audio = emotionAudio.trim();
+    if (input.meta.emotion_text !== undefined) metadata.emotion_text = input.meta.emotion_text;
+    if (input.meta.duration_factor !== undefined) metadata.duration_factor = input.meta.duration_factor;
+    payload.metadata = metadata;
     return payload;
   }
 

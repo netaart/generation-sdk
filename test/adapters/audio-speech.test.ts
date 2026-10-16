@@ -11,6 +11,7 @@ import {
 
 const REFERENCE_URL = "https://example.com/reference.mp3";
 const SECOND_REFERENCE_URL = "https://example.com/reference-2.mp3";
+const EMOTION_URL = "https://example.com/emotion.mp3";
 
 function routerSuccess(
   body: Record<string, unknown> = {},
@@ -171,6 +172,124 @@ describe("openai.audioSpeech adapter requests", () => {
           ],
         },
       },
+    ]);
+  });
+
+  it("maps all Breeze capability modes", async () => {
+    const { client, calls } = recordingClient();
+
+    await client.generate({
+      model: "breeze-tts-2",
+      content: [{ type: "text", text: "音色设计" }],
+      meta: { instruction: "一个沙哑的中年男声" },
+    });
+    await client.generate({
+      model: "breeze-tts-2",
+      content: [{ type: "text", text: "音色克隆" }, audio()],
+    });
+    await client.generate({
+      model: "breeze-tts-2",
+      content: [{ type: "text", text: "带转写的音色克隆" }, audio()],
+      meta: { ref_text: "参考音频里说的那句话" },
+    });
+    await client.generate({
+      model: "breeze-tts-2",
+      content: [{ type: "text", text: "音色演绎" }, audio()],
+      meta: { instruction: "语速放慢", ref_text: "参考音频里说的那句话" },
+    });
+    await client.generate({
+      model: "breeze-tts-2",
+      content: [{ type: "text", text: "默认音色" }],
+    });
+
+    expect(calls.map((call) => requestBody(call))).toEqual([
+      { model: "breeze-tts-2", input: "音色设计", metadata: { instruction: "一个沙哑的中年男声" } },
+      { model: "breeze-tts-2", input: "音色克隆", ref_audio: REFERENCE_URL },
+      {
+        model: "breeze-tts-2",
+        input: "带转写的音色克隆",
+        ref_audio: REFERENCE_URL,
+        metadata: { ref_text: "参考音频里说的那句话" },
+      },
+      {
+        model: "breeze-tts-2",
+        input: "音色演绎",
+        ref_audio: REFERENCE_URL,
+        metadata: { instruction: "语速放慢", ref_text: "参考音频里说的那句话" },
+      },
+      { model: "breeze-tts-2", input: "默认音色" },
+    ]);
+  });
+
+  it("maps all IndexTTS emotion entries and speaking rate", async () => {
+    const { client, calls } = recordingClient();
+
+    await client.generate({
+      model: "index-tts-2.5",
+      content: [{ type: "text", text: "克隆" }, audio()],
+      meta: { language: "zh" },
+    });
+    await client.generate({
+      model: "index-tts-2.5",
+      content: [{ type: "text", text: "情感参考音频" }, audio()],
+      meta: { language: "ja", emotion_audio: `  ${EMOTION_URL}\n` },
+    });
+    await client.generate({
+      model: "index-tts-2.5",
+      content: [{ type: "text", text: "情感文本" }, audio()],
+      meta: { language: "en", emotion_text: "愤怒地说" },
+    });
+    await client.generate({
+      model: "index-tts-2.5",
+      content: [{ type: "text", text: "语速" }, audio()],
+      meta: { language: "es", duration_factor: 1.2 },
+    });
+
+    expect(calls.map((call) => requestBody(call))).toEqual([
+      { model: "index-tts-2.5", input: "克隆", ref_audio: REFERENCE_URL, metadata: { language: "zh" } },
+      {
+        model: "index-tts-2.5",
+        input: "情感参考音频",
+        ref_audio: REFERENCE_URL,
+        metadata: { language: "ja", emotion_audio: EMOTION_URL },
+      },
+      {
+        model: "index-tts-2.5",
+        input: "情感文本",
+        ref_audio: REFERENCE_URL,
+        metadata: { language: "en", emotion_text: "愤怒地说" },
+      },
+      {
+        model: "index-tts-2.5",
+        input: "语速",
+        ref_audio: REFERENCE_URL,
+        metadata: { language: "es", duration_factor: 1.2 },
+      },
+    ]);
+  });
+
+  it("keeps an explicit neutral speaking rate distinguishable from an omitted one", async () => {
+    const { client, calls } = recordingClient();
+
+    await client.generate({
+      model: "index-tts-2.5",
+      content: [{ type: "text", text: "显式 1.0" }, audio()],
+      meta: { language: "zh", duration_factor: 1 },
+    });
+    await client.generate({
+      model: "index-tts-2.5",
+      content: [{ type: "text", text: "没传" }, audio()],
+      meta: { language: "zh" },
+    });
+
+    expect(calls.map((call) => requestBody(call))).toEqual([
+      {
+        model: "index-tts-2.5",
+        input: "显式 1.0",
+        ref_audio: REFERENCE_URL,
+        metadata: { language: "zh", duration_factor: 1 },
+      },
+      { model: "index-tts-2.5", input: "没传", ref_audio: REFERENCE_URL, metadata: { language: "zh" } },
     ]);
   });
 });
@@ -382,6 +501,333 @@ describe("openai.audioSpeech adapter validation", () => {
         ],
       }),
     ).toThrow("audio source is not supported by higgs-tts: base64");
+  });
+
+  it.each<{ label: string; request: GenerateRequest }>([
+    {
+      label: "voice design",
+      request: {
+        model: "breeze-tts-2",
+        content: [{ type: "text", text: "文本" }],
+        meta: { instruction: "一个沙哑的中年男声" },
+      },
+    },
+    {
+      label: "default voice",
+      request: { model: "breeze-tts-2", content: [{ type: "text", text: "文本" }] },
+    },
+    {
+      label: "voice clone",
+      request: { model: "breeze-tts-2", content: [{ type: "text", text: "文本" }, audio()] },
+    },
+    {
+      label: "voice clone with transcript",
+      request: {
+        model: "breeze-tts-2",
+        content: [{ type: "text", text: "文本" }, audio()],
+        meta: { ref_text: "参考音频里说的那句话" },
+      },
+    },
+    {
+      label: "voice performance",
+      request: {
+        model: "breeze-tts-2",
+        content: [{ type: "text", text: "文本" }, audio()],
+        meta: { instruction: "语速放慢" },
+      },
+    },
+    {
+      label: "voice performance with transcript",
+      request: {
+        model: "breeze-tts-2",
+        content: [{ type: "text", text: "文本" }, audio()],
+        meta: { instruction: "语速放慢", ref_text: "参考音频里说的那句话" },
+      },
+    },
+  ])("accepts Breeze $label", ({ request }) => {
+    const client = createGenerationClient({ apiKey: "key" });
+    expect(() => client.validate(request)).not.toThrow();
+  });
+
+  it.each([
+    { label: "ascii", text: "a".repeat(1001) },
+    { label: "astral", text: "😀".repeat(1001) },
+  ])("rejects Breeze $label input above 1000 Unicode code points", ({ text }) => {
+    const client = createGenerationClient({ apiKey: "key" });
+    expect(() => client.validate({ model: "breeze-tts-2", content: [{ type: "text", text }, audio()] })).toThrow(
+      "breeze-tts-2 accepts input of at most 1000 Unicode code points",
+    );
+  });
+
+  it.each([
+    { label: "ascii", text: "a".repeat(1000) },
+    { label: "astral", text: ` ${"😀".repeat(1000)} ` },
+  ])("accepts the Breeze $label input boundary", ({ text }) => {
+    const client = createGenerationClient({ apiKey: "key" });
+    expect(() => client.validate({ model: "breeze-tts-2", content: [{ type: "text", text }, audio()] })).not.toThrow();
+  });
+
+  it("rejects a Breeze transcript without reference audio", () => {
+    const client = createGenerationClient({ apiKey: "key" });
+    expect(() =>
+      client.validate({
+        model: "breeze-tts-2",
+        content: [{ type: "text", text: "文本" }],
+        meta: { ref_text: "参考音频里说的那句话" },
+      }),
+    ).toThrow("breeze-tts-2 meta.ref_text requires one reference audio");
+  });
+
+  it("rejects a second Breeze reference audio", () => {
+    const client = createGenerationClient({ apiKey: "key" });
+    expect(() =>
+      client.validate({
+        model: "breeze-tts-2",
+        content: [{ type: "text", text: "文本" }, audio(), audio(SECOND_REFERENCE_URL)],
+      }),
+    ).toThrow(GenerationValidationError);
+  });
+
+  it("enforces Breeze reference limits inside the adapter hook when a declaration is overridden", () => {
+    const declaration = getBuiltinGenerationModel("breeze-tts-2");
+    if (!declaration) throw new Error("breeze-tts-2 declaration is unavailable");
+    const audioSpec = declaration.content.input.find((spec) => spec.type === "audio");
+    if (!audioSpec) throw new Error("breeze-tts-2 audio spec is unavailable");
+    audioSpec.max = 2;
+    const client = createGenerationClient({ models: [declaration], includeBuiltinModels: false, apiKey: "key" });
+
+    expect(() =>
+      client.validate({
+        model: "breeze-tts-2",
+        content: [{ type: "text", text: "文本" }, audio(), audio(SECOND_REFERENCE_URL)],
+      }),
+    ).toThrow("supports at most one reference audio");
+  });
+
+  it.each<{ label: string; request: GenerateRequest }>([
+    {
+      label: "emotion from the reference audio",
+      request: {
+        model: "index-tts-2.5",
+        content: [{ type: "text", text: "文本" }, audio()],
+        meta: { language: "zh" },
+      },
+    },
+    {
+      label: "emotion from an emotion reference audio",
+      request: {
+        model: "index-tts-2.5",
+        content: [{ type: "text", text: "文本" }, audio()],
+        meta: { language: "zh", emotion_audio: EMOTION_URL },
+      },
+    },
+    {
+      label: "emotion from emotion text",
+      request: {
+        model: "index-tts-2.5",
+        content: [{ type: "text", text: "文本" }, audio()],
+        meta: { language: "zh", emotion_text: "愤怒地说" },
+      },
+    },
+  ])("accepts IndexTTS $label", ({ request }) => {
+    const client = createGenerationClient({ apiKey: "key" });
+    expect(() => client.validate(request)).not.toThrow();
+  });
+
+  it("rejects both IndexTTS emotion entries at once", () => {
+    const client = createGenerationClient({ apiKey: "key" });
+    expect(() =>
+      client.validate({
+        model: "index-tts-2.5",
+        content: [{ type: "text", text: "文本" }, audio()],
+        meta: { language: "zh", emotion_audio: EMOTION_URL, emotion_text: "愤怒地说" },
+      }),
+    ).toThrow("index-tts-2.5 meta.emotion_audio and meta.emotion_text are mutually exclusive");
+  });
+
+  it("rejects an IndexTTS request without reference audio", () => {
+    const client = createGenerationClient({ apiKey: "key" });
+    expect(() =>
+      client.validate({
+        model: "index-tts-2.5",
+        content: [{ type: "text", text: "文本" }],
+        meta: { language: "zh" },
+      }),
+    ).toThrow(GenerationValidationError);
+  });
+
+  it("rejects a second IndexTTS reference audio", () => {
+    const client = createGenerationClient({ apiKey: "key" });
+    expect(() =>
+      client.validate({
+        model: "index-tts-2.5",
+        content: [{ type: "text", text: "文本" }, audio(), audio(SECOND_REFERENCE_URL)],
+        meta: { language: "zh" },
+      }),
+    ).toThrow(GenerationValidationError);
+  });
+
+  it.each([
+    { label: "no reference audio", count: 0, message: "index-tts-2.5 requires one reference audio" },
+    { label: "two reference audio blocks", count: 2, message: "supports at most one reference audio" },
+  ])("enforces IndexTTS $label inside the adapter hook when a declaration is overridden", ({ count, message }) => {
+    const declaration = getBuiltinGenerationModel("index-tts-2.5");
+    if (!declaration) throw new Error("index-tts-2.5 declaration is unavailable");
+    const audioSpec = declaration.content.input.find((spec) => spec.type === "audio");
+    if (!audioSpec) throw new Error("index-tts-2.5 audio spec is unavailable");
+    audioSpec.required = false;
+    audioSpec.min = 0;
+    audioSpec.max = 2;
+    const client = createGenerationClient({ models: [declaration], includeBuiltinModels: false, apiKey: "key" });
+
+    expect(() =>
+      client.validate({
+        model: "index-tts-2.5",
+        content: [
+          { type: "text", text: "文本" },
+          ...Array.from({ length: count }, (_, index) => audio(`https://example.com/reference-${index}.mp3`)),
+        ],
+        meta: { language: "zh" },
+      }),
+    ).toThrow(message);
+  });
+
+  it.each([0.5, 1, 2])("accepts the IndexTTS speaking rate boundary %s", (durationFactor) => {
+    const client = createGenerationClient({ apiKey: "key" });
+    expect(() =>
+      client.validate({
+        model: "index-tts-2.5",
+        content: [{ type: "text", text: "文本" }, audio()],
+        meta: { language: "zh", duration_factor: durationFactor },
+      }),
+    ).not.toThrow();
+  });
+
+  it.each([
+    { durationFactor: 0.4, message: "meta.duration_factor must be >= 0.5" },
+    { durationFactor: 2.1, message: "meta.duration_factor must be <= 2" },
+  ])("rejects the out-of-range IndexTTS speaking rate $durationFactor", ({ durationFactor, message }) => {
+    const client = createGenerationClient({ apiKey: "key" });
+    expect(() =>
+      client.validate({
+        model: "index-tts-2.5",
+        content: [{ type: "text", text: "文本" }, audio()],
+        meta: { language: "zh", duration_factor: durationFactor },
+      }),
+    ).toThrow(message);
+  });
+
+  it.each(["zh", "en", "ja", "es", "ar"])("accepts the IndexTTS language %s", (language) => {
+    const client = createGenerationClient({ apiKey: "key" });
+    expect(() =>
+      client.validate({
+        model: "index-tts-2.5",
+        content: [{ type: "text", text: "文本" }, audio()],
+        meta: { language },
+      }),
+    ).not.toThrow();
+  });
+
+  it("rejects an unsupported IndexTTS language", () => {
+    const client = createGenerationClient({ apiKey: "key" });
+    expect(() =>
+      client.validate({
+        model: "index-tts-2.5",
+        content: [{ type: "text", text: "文本" }, audio()],
+        meta: { language: "fr" },
+      }),
+    ).toThrow("meta.language must be one of: zh, en, ja, es, ar");
+  });
+
+  it("rejects an IndexTTS request without a language", () => {
+    const client = createGenerationClient({ apiKey: "key" });
+    expect(() =>
+      client.validate({
+        model: "index-tts-2.5",
+        content: [{ type: "text", text: "文本" }, audio()],
+      }),
+    ).toThrow("Missing required meta: language");
+  });
+
+  it.each([
+    "",
+    " ",
+    "not a URL",
+    "data:audio/mpeg;base64,abc",
+    "file:///tmp/emotion.mp3",
+  ])("rejects unsupported IndexTTS emotion audio %s", (emotionAudio) => {
+    const client = createGenerationClient({ apiKey: "key" });
+    expect(() =>
+      client.validate({
+        model: "index-tts-2.5",
+        content: [{ type: "text", text: "文本" }, audio()],
+        meta: { language: "zh", emotion_audio: emotionAudio },
+      }),
+    ).toThrow("index-tts-2.5 meta.emotion_audio");
+  });
+
+  it.each<{ label: string; request: GenerateRequest }>([
+    {
+      label: "Breeze voice prompt",
+      request: {
+        model: "breeze-tts-2",
+        content: [{ type: "text", text: "文本" }],
+        meta: { voice_prompt: "沙哑男声" },
+      },
+    },
+    {
+      label: "Breeze audio block transcript",
+      request: {
+        model: "breeze-tts-2",
+        content: [{ type: "text", text: "文本" }, audio(REFERENCE_URL, { ref_text: "转写" })],
+      },
+    },
+    {
+      label: "Breeze blank instruction",
+      request: {
+        model: "breeze-tts-2",
+        content: [{ type: "text", text: "文本" }],
+        meta: { instruction: " \n " },
+      },
+    },
+    {
+      label: "IndexTTS instruction",
+      request: {
+        model: "index-tts-2.5",
+        content: [{ type: "text", text: "文本" }, audio()],
+        meta: { language: "zh", instruction: "语速放慢" },
+      },
+    },
+    {
+      label: "IndexTTS blank emotion text",
+      request: {
+        model: "index-tts-2.5",
+        content: [{ type: "text", text: "文本" }, audio()],
+        meta: { language: "zh", emotion_text: " \n " },
+      },
+    },
+  ])("rejects invalid meta scope: $label", ({ request }) => {
+    const client = createGenerationClient({ apiKey: "key" });
+    expect(() => client.validate(request)).toThrow(GenerationValidationError);
+  });
+
+  it.each([
+    { model: "breeze-tts-2", meta: {} },
+    { model: "index-tts-2.5", meta: { language: "zh" } },
+  ])("accepts short $model input without a length floor", ({ model, meta }) => {
+    const client = createGenerationClient({ apiKey: "key" });
+    expect(() => client.validate({ model, content: [{ type: "text", text: "短" }, audio()], meta })).not.toThrow();
+  });
+
+  it("keeps rejecting audio speech models the adapter does not know", () => {
+    const declaration = getBuiltinGenerationModel("higgs-tts");
+    if (!declaration) throw new Error("higgs-tts declaration is unavailable");
+    declaration.model = "unknown-tts";
+    const client = createGenerationClient({ models: [declaration], includeBuiltinModels: false, apiKey: "key" });
+
+    expect(() => client.validate({ model: "unknown-tts", content: [{ type: "text", text: "文本" }] })).toThrow(
+      "Unsupported audio speech model: unknown-tts",
+    );
   });
 });
 

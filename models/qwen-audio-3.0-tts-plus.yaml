@@ -1,7 +1,7 @@
 schema: neta.generation.model.v1
 model: qwen-audio-3.0-tts-plus
 title: Qwen Audio 3.0 TTS Plus
-description: 'Modes: voice_prompt design OR one-reference clone. Text: >=15 Unicode code points. Conflict: ask user; never combine/reinterpret. Dependency: clone prior generated audio.'
+description: 'Versatile general-purpose TTS. Modes: voice_prompt design OR one-reference clone. Text: >=15 Unicode code points. Conflict: ask user; never combine/reinterpret. Dependency: clone prior generated audio.'
 adapter:
   type: openai.audioSpeech
 content:

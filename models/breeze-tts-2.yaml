@@ -1,0 +1,81 @@
+schema: neta.generation.model.v1
+model: breeze-tts-2
+title: Breeze TTS 2
+description: 'Excels at instruction-following for voice design. Primarily supports Chinese and English. Modes: instruction design; one-reference clone; clone with instruction delivery; default voice. Instruction: designs voice without reference; guides delivery with reference. Transcript: meta.ref_text optional; auto-transcribed if omitted. Text: <=1000 Unicode code points (~90s speech); split longer text. Dependency: clone prior generated audio.'
+adapter:
+  type: openai.audioSpeech
+content:
+  input:
+    - type: text
+      required: true
+      min: 1
+      max: 1
+      description: Exactly one non-empty text block to speak.
+    - type: audio
+      required: false
+      max: 1
+      sources:
+        - url
+      description: "Clone: one URL. Omit it to design a voice from meta.instruction or to use the default voice. Dependency:
+        use prior generated audio."
+meta:
+  fields:
+    instruction:
+      type: string
+      optional: true
+      description: "Design: describes the voice to create when there is no reference audio. Delivery: describes how to speak
+        the text when there is reference audio."
+    ref_text:
+      type: string
+      optional: true
+      description: Transcript of the reference audio; requires reference audio. Omit it to have the transcript produced
+        automatically.
+examples:
+  - title: Voice design
+    request:
+      model: breeze-tts-2
+      content:
+        - type: text
+          text: 凭空设计一个音色来朗读这段文本。
+      meta:
+        instruction: 一个沙哑的中年男声，带点疲惫
+  - title: Voice clone
+    request:
+      model: breeze-tts-2
+      content:
+        - type: text
+          text: 使用参考音频克隆音色朗读这段文本。
+        - type: audio
+          source:
+            type: url
+            url: https://example.com/reference.mp3
+  - title: Voice clone with transcript
+    request:
+      model: breeze-tts-2
+      content:
+        - type: text
+          text: 使用参考音频克隆音色朗读这段文本。
+        - type: audio
+          source:
+            type: url
+            url: https://example.com/reference.mp3
+      meta:
+        ref_text: 参考音频里逐字说出的那句话。
+  - title: Voice performance
+    request:
+      model: breeze-tts-2
+      content:
+        - type: text
+          text: 使用克隆音色按指定语气朗读这段文本。
+        - type: audio
+          source:
+            type: url
+            url: https://example.com/reference.mp3
+      meta:
+        instruction: 语速放慢，带一点无奈的叹息感
+  - title: Default voice
+    request:
+      model: breeze-tts-2
+      content:
+        - type: text
+          text: 使用默认音色朗读这段文本。

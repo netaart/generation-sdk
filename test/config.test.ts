@@ -90,7 +90,9 @@ describe("config", () => {
     expect(byCategory["3d"].sort()).toEqual([...expected["3d"]]);
     expect(byCategory.decision.sort()).toEqual([...expected.decision]);
     for (const model of [
+      "breeze-tts-2",
       "higgs-tts",
+      "index-tts-2.5",
       "qwen-tts",
       "qwen-audio-3.0-tts-plus",
       "qwen-audio-3.0-tts-flash",
@@ -313,7 +315,7 @@ describe("config", () => {
 
     const plus = client.getModel("qwen-audio-3.0-tts-plus");
     expect(plus?.description).toBe(
-      "Modes: voice_prompt design OR one-reference clone. Text: >=15 Unicode code points. Conflict: ask user; never combine/reinterpret. Dependency: clone prior generated audio.",
+      "Versatile general-purpose TTS. Modes: voice_prompt design OR one-reference clone. Text: >=15 Unicode code points. Conflict: ask user; never combine/reinterpret. Dependency: clone prior generated audio.",
     );
     expect(plus?.content.input.find((input) => input.type === "text")?.description).toContain(
       "at least 15 Unicode code points",
@@ -329,7 +331,7 @@ describe("config", () => {
 
     const higgs = client.getModel("higgs-tts");
     expect(higgs?.description).toBe(
-      "Modes: built-in; one-reference high-fidelity clone; weighted 2-16-reference blend. Default: delegated generic voice (natural/suitable). Blend: all references, full text, one request. Conflict: clone + redesign; ask user, do not reinterpret. Dependency: clone prior generated audio.",
+      "High-fidelity voice cloning with multi-reference blending. Modes: built-in; one-reference high-fidelity clone; weighted 2-16-reference blend. Default: delegated generic voice (natural/suitable). Blend: all references, full text, one request. Conflict: clone + redesign; ask user, do not reinterpret. Dependency: clone prior generated audio.",
     );
     expect(higgs?.description).not.toMatch(/Qwen|stronger|HTTP|URL/i);
     expect(higgs?.content.input.find((input) => input.type === "audio")?.description).toContain(
@@ -345,6 +347,70 @@ describe("config", () => {
       "Multiple references",
     ]);
     expect(JSON.parse(client.stringifyModelConfig("higgs-tts", { format: "json" }))).toEqual(higgs);
+
+    const breeze = client.getModel("breeze-tts-2");
+    expect(breeze?.description).toContain("Excels at instruction-following for voice design");
+    expect(breeze?.description).toContain(
+      "Modes: instruction design; one-reference clone; clone with instruction delivery; default voice",
+    );
+    expect(breeze?.description).toContain(
+      "Instruction: designs voice without reference; guides delivery with reference",
+    );
+    // The actor hard-fails a request whose rendered audio reaches its ~90s
+    // generation ceiling, so "any length" would send agents into a request that
+    // burns a full GPU run before failing. The declaration is the source of
+    // truth agents read; it has to carry the real limit.
+    expect(breeze?.description).toContain("~90s speech");
+    expect(breeze?.description).not.toContain("Text: any length");
+    expect(breeze?.content.input.find((input) => input.type === "audio")?.max).toBe(1);
+    expect(breeze?.content.input.find((input) => input.type === "audio")?.sources).toEqual(["url"]);
+    expect(breeze?.meta?.fields?.instruction?.description).toContain(
+      "describes the voice to create when there is no reference audio",
+    );
+    expect(breeze?.meta?.fields?.ref_text?.description).toContain("requires reference audio");
+    expect(breeze?.examples?.map((example) => example.title)).toEqual([
+      "Voice design",
+      "Voice clone",
+      "Voice clone with transcript",
+      "Voice performance",
+      "Default voice",
+    ]);
+    expect(JSON.parse(client.stringifyModelConfig("breeze-tts-2", { format: "json" }))).toEqual(breeze);
+
+    const indexTts = client.getModel("index-tts-2.5");
+    expect(indexTts?.description).toContain("Precise emotion control");
+    expect(indexTts?.description).toContain("Emotion: emotion_audio and emotion_text mutually exclusive");
+    expect(indexTts?.description).toContain("Reference: exactly one audio required");
+    expect(indexTts?.description).toContain("Text: long-text behavior unmeasured");
+    expect(indexTts?.content.input.find((input) => input.type === "audio")).toMatchObject({
+      required: true,
+      max: 1,
+      sources: ["url"],
+    });
+    // `required: true` is what rejects zero audio blocks; a redundant `min`
+    // would be a gratuitous difference from the qwen and higgs audio specs.
+    expect(indexTts?.content.input.find((input) => input.type === "audio")).not.toHaveProperty("min");
+    expect(indexTts?.meta?.fields?.duration_factor).toMatchObject({ type: "number", min: 0.5, max: 2 });
+    expect(indexTts?.meta?.fields?.duration_factor).not.toHaveProperty("default");
+    expect(indexTts?.meta?.fields?.language).toMatchObject({
+      type: "string",
+      enum: ["zh", "en", "ja", "es", "ar"],
+    });
+    expect(indexTts?.meta?.fields?.language?.optional).toBeUndefined();
+    expect(indexTts?.examples?.map((example) => example.title)).toEqual([
+      "Reference clone",
+      "Emotion reference audio",
+      "Emotion text",
+      "Slower speaking rate",
+    ]);
+    expect(JSON.parse(client.stringifyModelConfig("index-tts-2.5", { format: "json" }))).toEqual(indexTts);
+
+    for (const model of ["breeze-tts-2", "index-tts-2.5"]) {
+      expect(client.getModel(model)?.content.input.find((input) => input.type === "audio")).not.toHaveProperty("roles");
+      expect(client.getModel(model)?.content.input.find((input) => input.type === "text")?.description).not.toContain(
+        "Unicode code points",
+      );
+    }
   });
 
   it("keeps model discovery on the existing package exports", async () => {
@@ -356,7 +422,19 @@ describe("config", () => {
     expect(readme).not.toContain("@neta-art/generation/models/");
     expect(readme).toContain("Qwen: `voice_prompt` design OR one-reference clone");
     expect(readme).toContain("Higgs: delegated default voice, high-fidelity one-reference clone");
+    expect(readme).toContain("Breeze: `instruction` design without reference audio, one-reference clone");
+    expect(readme).toContain(
+      "IndexTTS: one-reference clone whose emotion comes from the reference audio, from `emotion_audio`, or from `emotion_text`",
+    );
+    expect(readme).toContain(
+      "`qwen-tts` when the request has no reference audio and never will; `breeze-tts-2` when the same description must also stay usable on top of a reference voice",
+    );
+    expect(readme).toContain(
+      "| Control emotion independently of the cloned voice, from an emotion reference audio or from emotion text | `index-tts-2.5` |",
+    );
+    expect(readme).toContain("Emotion: emotion decoupled from the cloned voice is `index-tts-2.5` only");
     expect(readme).toContain("Conflict: reference + redesign requires user choice before generation");
+    expect(readme).toContain("Conflict: `emotion_audio` + `emotion_text` requires user choice before generation");
     expect(readme).toContain("Blend: all references, full text, one request");
     expect(readme).toContain("Dependency: clone prior generated audio");
     expect(readme).toContain("Ranking: no declared Qwen quality, latency, or cost order");

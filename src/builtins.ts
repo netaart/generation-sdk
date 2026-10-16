@@ -784,7 +784,7 @@ const audioSpeechModels = [
   qwenTtsModel(
     "qwen-audio-3.0-tts-plus",
     "Qwen Audio 3.0 TTS Plus",
-    "Modes: voice_prompt design OR one-reference clone. Text: >=15 Unicode code points. Conflict: ask user; never combine/reinterpret. Dependency: clone prior generated audio.",
+    "Versatile general-purpose TTS. Modes: voice_prompt design OR one-reference clone. Text: >=15 Unicode code points. Conflict: ask user; never combine/reinterpret. Dependency: clone prior generated audio.",
     { minimumTextCodePoints: 15 },
   ),
   qwenTtsModel(
@@ -798,7 +798,7 @@ const audioSpeechModels = [
     model: "higgs-tts",
     title: "Higgs TTS",
     description:
-      "Modes: built-in; one-reference high-fidelity clone; weighted 2-16-reference blend. Default: delegated generic voice (natural/suitable). Blend: all references, full text, one request. Conflict: clone + redesign; ask user, do not reinterpret. Dependency: clone prior generated audio.",
+      "High-fidelity voice cloning with multi-reference blending. Modes: built-in; one-reference high-fidelity clone; weighted 2-16-reference blend. Default: delegated generic voice (natural/suitable). Blend: all references, full text, one request. Conflict: clone + redesign; ask user, do not reinterpret. Dependency: clone prior generated audio.",
     adapter: { type: "openai.audioSpeech" },
     content: {
       input: [
@@ -868,6 +868,199 @@ const audioSpeechModels = [
               meta: { weight: 0.5 },
             },
           ],
+        },
+      },
+    ],
+  },
+  {
+    schema: MODEL_SCHEMA,
+    model: "breeze-tts-2",
+    title: "Breeze TTS 2",
+    description:
+      "Excels at instruction-following for voice design. Primarily supports Chinese and English. Modes: instruction design; one-reference clone; clone with instruction delivery; default voice. Instruction: designs voice without reference; guides delivery with reference. Transcript: meta.ref_text optional; auto-transcribed if omitted. Text: <=1000 Unicode code points (~90s speech); split longer text. Dependency: clone prior generated audio.",
+    adapter: { type: "openai.audioSpeech" },
+    content: {
+      input: [
+        {
+          type: "text",
+          required: true,
+          min: 1,
+          max: 1,
+          description: "Exactly one non-empty text block to speak.",
+        },
+        {
+          type: "audio",
+          required: false,
+          max: 1,
+          sources: ["url"],
+          description:
+            "Clone: one URL. Omit it to design a voice from meta.instruction or to use the default voice. Dependency: use prior generated audio.",
+        },
+      ],
+    },
+    meta: {
+      fields: {
+        instruction: {
+          type: "string",
+          optional: true,
+          description:
+            "Design: describes the voice to create when there is no reference audio. Delivery: describes how to speak the text when there is reference audio.",
+        },
+        ref_text: {
+          type: "string",
+          optional: true,
+          description:
+            "Transcript of the reference audio; requires reference audio. Omit it to have the transcript produced automatically.",
+        },
+      },
+    },
+    examples: [
+      {
+        title: "Voice design",
+        request: {
+          model: "breeze-tts-2",
+          content: [{ type: "text", text: "凭空设计一个音色来朗读这段文本。" }],
+          meta: { instruction: "一个沙哑的中年男声，带点疲惫" },
+        },
+      },
+      {
+        title: "Voice clone",
+        request: {
+          model: "breeze-tts-2",
+          content: [
+            { type: "text", text: "使用参考音频克隆音色朗读这段文本。" },
+            { type: "audio", source: { type: "url", url: "https://example.com/reference.mp3" } },
+          ],
+        },
+      },
+      {
+        title: "Voice clone with transcript",
+        request: {
+          model: "breeze-tts-2",
+          content: [
+            { type: "text", text: "使用参考音频克隆音色朗读这段文本。" },
+            { type: "audio", source: { type: "url", url: "https://example.com/reference.mp3" } },
+          ],
+          meta: { ref_text: "参考音频里逐字说出的那句话。" },
+        },
+      },
+      {
+        title: "Voice performance",
+        request: {
+          model: "breeze-tts-2",
+          content: [
+            { type: "text", text: "使用克隆音色按指定语气朗读这段文本。" },
+            { type: "audio", source: { type: "url", url: "https://example.com/reference.mp3" } },
+          ],
+          meta: { instruction: "语速放慢，带一点无奈的叹息感" },
+        },
+      },
+      {
+        title: "Default voice",
+        request: {
+          model: "breeze-tts-2",
+          content: [{ type: "text", text: "使用默认音色朗读这段文本。" }],
+        },
+      },
+    ],
+  },
+  {
+    schema: MODEL_SCHEMA,
+    model: "index-tts-2.5",
+    title: "IndexTTS 2.5",
+    description:
+      "Precise emotion control. Modes: one-reference clone (ref emotion); clone with meta.emotion_audio; clone with meta.emotion_text. Reference: exactly one audio required. Emotion: emotion_audio and emotion_text mutually exclusive; ask user, never combine. Rate: duration_factor 0.5-2.0 (>1.0 slower). Language: required (zh/en/ja/es/ar). Text: long-text behavior unmeasured. Dependency: clone prior generated audio.",
+    adapter: { type: "openai.audioSpeech" },
+    content: {
+      input: [
+        {
+          type: "text",
+          required: true,
+          min: 1,
+          max: 1,
+          description: "Exactly one non-empty text block to speak.",
+        },
+        {
+          // No `min`: `required: true` already rejects zero audio blocks, and
+          // neither qwen-tts nor higgs-tts sets one on its audio spec.
+          type: "audio",
+          required: true,
+          max: 1,
+          sources: ["url"],
+          description: "Clone: exactly one required URL. Dependency: use prior generated audio.",
+        },
+      ],
+    },
+    meta: {
+      fields: {
+        emotion_audio: {
+          type: "string",
+          optional: true,
+          description:
+            "Emotion reference audio as one http(s) URL; only its emotion is used, never its voice. Mutually exclusive with meta.emotion_text.",
+        },
+        emotion_text: {
+          type: "string",
+          optional: true,
+          description: "Emotion described in words. Mutually exclusive with meta.emotion_audio.",
+        },
+        duration_factor: {
+          type: "number",
+          optional: true,
+          min: 0.5,
+          max: 2,
+          description: "Speaking rate factor between 0.5 and 2.0; above 1.0 is slower, below 1.0 is faster.",
+        },
+        language: {
+          type: "string",
+          enum: ["zh", "en", "ja", "es", "ar"],
+          description: "Required synthesis language.",
+        },
+      },
+    },
+    examples: [
+      {
+        title: "Reference clone",
+        request: {
+          model: "index-tts-2.5",
+          content: [
+            { type: "text", text: "使用参考音频克隆音色朗读这段文本。" },
+            { type: "audio", source: { type: "url", url: "https://example.com/reference.mp3" } },
+          ],
+          meta: { language: "zh" },
+        },
+      },
+      {
+        title: "Emotion reference audio",
+        request: {
+          model: "index-tts-2.5",
+          content: [
+            { type: "text", text: "音色来自参考音频，情感来自另一段音频。" },
+            { type: "audio", source: { type: "url", url: "https://example.com/reference.mp3" } },
+          ],
+          meta: { language: "zh", emotion_audio: "https://example.com/emotion.mp3" },
+        },
+      },
+      {
+        title: "Emotion text",
+        request: {
+          model: "index-tts-2.5",
+          content: [
+            { type: "text", text: "音色来自参考音频，情感由一句话描述。" },
+            { type: "audio", source: { type: "url", url: "https://example.com/reference.mp3" } },
+          ],
+          meta: { language: "zh", emotion_text: "愤怒地说，语气强硬" },
+        },
+      },
+      {
+        title: "Slower speaking rate",
+        request: {
+          model: "index-tts-2.5",
+          content: [
+            { type: "text", text: "放慢语速朗读这段旁白。" },
+            { type: "audio", source: { type: "url", url: "https://example.com/reference.mp3" } },
+          ],
+          meta: { language: "zh", duration_factor: 1.2 },
         },
       },
     ],

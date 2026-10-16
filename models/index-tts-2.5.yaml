@@ -1,0 +1,97 @@
+schema: neta.generation.model.v1
+model: index-tts-2.5
+title: IndexTTS 2.5
+description: 'Precise emotion control. Modes: one-reference clone (ref emotion); clone with meta.emotion_audio; clone with meta.emotion_text. Reference: exactly one audio required. Emotion: emotion_audio and emotion_text mutually exclusive; ask user, never combine. Rate: duration_factor 0.5-2.0 (>1.0 slower). Language: required (zh/en/ja/es/ar). Text: long-text behavior unmeasured. Dependency: clone prior generated audio.'
+adapter:
+  type: openai.audioSpeech
+content:
+  input:
+    - type: text
+      required: true
+      min: 1
+      max: 1
+      description: Exactly one non-empty text block to speak.
+    - type: audio
+      required: true
+      max: 1
+      sources:
+        - url
+      description: "Clone: exactly one required URL. Dependency: use prior generated audio."
+meta:
+  fields:
+    emotion_audio:
+      type: string
+      optional: true
+      description: Emotion reference audio as one http(s) URL; only its emotion is used, never its voice. Mutually exclusive
+        with meta.emotion_text.
+    emotion_text:
+      type: string
+      optional: true
+      description: Emotion described in words. Mutually exclusive with meta.emotion_audio.
+    duration_factor:
+      type: number
+      optional: true
+      min: 0.5
+      max: 2
+      description: Speaking rate factor between 0.5 and 2.0; above 1.0 is slower, below 1.0 is faster.
+    language:
+      type: string
+      enum:
+        - zh
+        - en
+        - ja
+        - es
+        - ar
+      description: Required synthesis language.
+examples:
+  - title: Reference clone
+    request:
+      model: index-tts-2.5
+      content:
+        - type: text
+          text: 使用参考音频克隆音色朗读这段文本。
+        - type: audio
+          source:
+            type: url
+            url: https://example.com/reference.mp3
+      meta:
+        language: zh
+  - title: Emotion reference audio
+    request:
+      model: index-tts-2.5
+      content:
+        - type: text
+          text: 音色来自参考音频，情感来自另一段音频。
+        - type: audio
+          source:
+            type: url
+            url: https://example.com/reference.mp3
+      meta:
+        language: zh
+        emotion_audio: https://example.com/emotion.mp3
+  - title: Emotion text
+    request:
+      model: index-tts-2.5
+      content:
+        - type: text
+          text: 音色来自参考音频，情感由一句话描述。
+        - type: audio
+          source:
+            type: url
+            url: https://example.com/reference.mp3
+      meta:
+        language: zh
+        emotion_text: 愤怒地说，语气强硬
+  - title: Slower speaking rate
+    request:
+      model: index-tts-2.5
+      content:
+        - type: text
+          text: 放慢语速朗读这段旁白。
+        - type: audio
+          source:
+            type: url
+            url: https://example.com/reference.mp3
+      meta:
+        language: zh
+        duration_factor: 1.2

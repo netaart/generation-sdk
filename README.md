@@ -312,6 +312,8 @@ const client = createGenerationClient({
 - `qwen-audio-3.0-tts-plus`
 - `qwen-audio-3.0-tts-flash`
 - `higgs-tts`
+- `breeze-tts-2`
+- `index-tts-2.5`
 - `gemini-3.1-flash-image-preview`
 - `kling-text-to-video`
 - `kling-image-to-video`
@@ -408,14 +410,22 @@ Each TTS request accepts exactly one non-empty text block and returns one URL au
 
 | Requirement | Model choice |
 | --- | --- |
-| Create a voice from a text-only description, without reference audio | Use an explicitly requested Qwen variant; otherwise use `qwen-tts` as the deterministic default |
+| Create a voice from a text-only description, without reference audio | `qwen-tts` when the request has no reference audio and never will; `breeze-tts-2` when the same description must also stay usable on top of a reference voice |
+| Speak a cloned voice with a described delivery, without changing the voice | `breeze-tts-2` |
+| Control emotion independently of the cloned voice, from an emotion reference audio or from emotion text | `index-tts-2.5` |
+| Set a speaking rate, or state the synthesis language | `index-tts-2.5`, which always requires a reference audio |
 | Maximize fidelity to one reference voice | `higgs-tts` |
 | Blend 2-16 weighted reference voices | `higgs-tts` |
 | Use a default voice, including a delegated choice expressed only as any, random, suitable, or natural | `higgs-tts` |
 
 - Qwen: `voice_prompt` design OR one-reference clone; `qwen-tts` is the unspecified-design default and accepts any text length; Plus / Flash require at least 15 Unicode code points.
 - Higgs: delegated default voice, high-fidelity one-reference clone, or weighted 2-16-reference blend.
+- Breeze: `instruction` design without reference audio, one-reference clone, both together for a described delivery of a cloned voice, or neither for the upstream default voice; optional `ref_text` transcript requires reference audio and is produced automatically when omitted; one request must render under about 90 seconds of speech, roughly 250 Chinese characters, and 1000 Unicode code points is a hard ceiling in any language, so split longer text.
+- IndexTTS: one-reference clone whose emotion comes from the reference audio, from `emotion_audio`, or from `emotion_text`; `duration_factor` 0.5-2.0 sets the speaking rate and `language` is required.
+- Design: `voice_prompt` design is Qwen-only and cannot be combined with reference audio; `instruction` design is Breeze-only and the same field directs delivery once reference audio is present.
+- Emotion: emotion decoupled from the cloned voice is `index-tts-2.5` only.
 - Conflict: reference + redesign requires user choice before generation.
+- Conflict: `emotion_audio` + `emotion_text` requires user choice before generation.
 - Blend: all references, full text, one request.
 - Dependency: clone prior generated audio.
 - Ranking: no declared Qwen quality, latency, or cost order.
