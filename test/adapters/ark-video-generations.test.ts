@@ -404,7 +404,7 @@ describe("ark.videoGenerations adapter", () => {
     expect(metadata.ratio).toBe("9:16");
   });
 
-  it("rejects Seedance 2.5 edit tasks that set a fixed ratio", async () => {
+  it("rejects Seedance 2.5 reference-video tasks that set a fixed ratio", async () => {
     const client = createGenerationClient({
       apiKey: "key",
       fetch: async () => {
@@ -420,8 +420,17 @@ describe("ark.videoGenerations adapter", () => {
           videoBlock("https://example.com/source.mp4", { role: "reference_video" }),
         ],
         parameters: { ratio: "16:9" },
-        meta: { omni_reference_task_type: "edit" },
       }),
-    ).rejects.toThrow('Seedance 2.5 edit tasks require ratio=adaptive, got "16:9"');
+    ).rejects.toThrow('Seedance 2.5 edit/extend tasks require ratio=adaptive, got "16:9"');
+  });
+
+  it("defaults Seedance 2.5 reference-video ratio to adaptive", async () => {
+    const { calls } = await runSuccessfulVideoGeneration(
+      [textBlock("extend the motion"), videoBlock("https://example.com/source.mp4", { role: "reference_video" })],
+      {},
+      "seedance-2-5",
+    );
+    const metadata = parseCreateBody(calls).metadata as Record<string, unknown>;
+    expect(metadata.ratio).toBe("adaptive");
   });
 });
