@@ -815,7 +815,7 @@ const audioSpeechModels = [
           max: 16,
           sources: ["url"],
           description:
-            "Reference: one may omit weight; 2-16 require positive finite weights. Dependency: use prior generated audio.",
+            "Reference: one may omit weight; 2-16 require positive finite weights. meta.text: optional transcript of that reference clip; omitted clips are auto-transcribed downstream, but a supplied transcript improves clone/mix fidelity. Dependency: use prior generated audio.",
         },
       ],
     },
@@ -866,6 +866,25 @@ const audioSpeechModels = [
               type: "audio",
               source: { type: "url", url: "https://example.com/reference-b.mp3" },
               meta: { weight: 0.5 },
+            },
+          ],
+        },
+      },
+      {
+        title: "Multiple references with each clip's own transcript",
+        request: {
+          model: "higgs-tts",
+          content: [
+            { type: "text", text: "使用多参考融合音色朗读这段文本。" },
+            {
+              type: "audio",
+              source: { type: "url", url: "https://example.com/reference-a.mp3" },
+              meta: { weight: 0.5, text: "第一条参考音频实际说的话" },
+            },
+            {
+              type: "audio",
+              source: { type: "url", url: "https://example.com/reference-b.mp3" },
+              meta: { weight: 0.5, text: "第二条参考音频实际说的话" },
             },
           ],
         },

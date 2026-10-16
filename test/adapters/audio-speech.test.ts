@@ -173,6 +173,67 @@ describe("openai.audioSpeech adapter requests", () => {
       },
     ]);
   });
+
+  it("routes a solo reference with only meta.text through references, defaulting weight to 1", async () => {
+    // The bare ref_audio shortcut has no field to carry a transcript, so
+    // meta.text alone (no weight at all) must force the references path --
+    // and new-api rejects a missing/zero weight unconditionally, so this
+    // must default to 1 rather than send weight: undefined.
+    const { client, calls } = recordingClient();
+
+    await client.generate({
+      model: "higgs-tts",
+      content: [{ type: "text", text: "单参考带转写" }, audio(REFERENCE_URL, { text: "参考音频实际说的话" })],
+    });
+
+    expect(requestBody(calls[0])).toEqual({
+      model: "higgs-tts",
+      input: "单参考带转写",
+      metadata: { references: [{ url: REFERENCE_URL, weight: 1, text: "参考音频实际说的话" }] },
+    });
+  });
+
+  it("forwards meta.text alongside an explicit weight for a solo reference", async () => {
+    const { client, calls } = recordingClient();
+
+    await client.generate({
+      model: "higgs-tts",
+      content: [
+        { type: "text", text: "带权重单参考带转写" },
+        audio(REFERENCE_URL, { weight: 1, text: "参考音频实际说的话" }),
+      ],
+    });
+
+    expect(requestBody(calls[0])).toEqual({
+      model: "higgs-tts",
+      input: "带权重单参考带转写",
+      metadata: { references: [{ url: REFERENCE_URL, weight: 1, text: "参考音频实际说的话" }] },
+    });
+  });
+
+  it("forwards a partial meta.text across multiple references, position-matched", async () => {
+    const { client, calls } = recordingClient();
+
+    await client.generate({
+      model: "higgs-tts",
+      content: [
+        { type: "text", text: "多参考部分带转写" },
+        audio(REFERENCE_URL, { weight: 0.4, text: "第一条参考的转写" }),
+        audio(SECOND_REFERENCE_URL, { weight: 0.6 }),
+      ],
+    });
+
+    expect(requestBody(calls[0])).toEqual({
+      model: "higgs-tts",
+      input: "多参考部分带转写",
+      metadata: {
+        references: [
+          { url: REFERENCE_URL, weight: 0.4, text: "第一条参考的转写" },
+          { url: SECOND_REFERENCE_URL, weight: 0.6 },
+        ],
+      },
+    });
+  });
 });
 
 describe("openai.audioSpeech adapter validation", () => {
@@ -356,6 +417,26 @@ describe("openai.audioSpeech adapter validation", () => {
         ],
       }),
     ).toThrow("meta.weight must be a finite positive number");
+  });
+
+  it.each([123, true, "", "   ", null])("rejects invalid Higgs reference meta.text %s", (text) => {
+    const client = createGenerationClient({ apiKey: "key" });
+    expect(() =>
+      client.validate({
+        model: "higgs-tts",
+        content: [{ type: "text", text: "文本" }, audio(REFERENCE_URL, { text })],
+      }),
+    ).toThrow("meta.text must be a non-empty string");
+  });
+
+  it("still rejects an unknown Higgs reference meta key alongside a valid text", () => {
+    const client = createGenerationClient({ apiKey: "key" });
+    expect(() =>
+      client.validate({
+        model: "higgs-tts",
+        content: [{ type: "text", text: "文本" }, audio(REFERENCE_URL, { text: "转写", extra: true })],
+      }),
+    ).toThrow("Unknown audio content block 0 meta field: extra");
   });
 
   it.each([

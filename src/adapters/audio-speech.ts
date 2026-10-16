@@ -113,11 +113,19 @@ function validateHiggs(input: ResolvedGenerationRequest, text: TextBlock, audio:
   validateMetaKeys("text content meta", text.meta, new Set());
 
   for (const [index, block] of audio.entries()) {
-    validateMetaKeys(`audio content block ${index} meta`, block.meta, new Set(["weight"]));
+    validateMetaKeys(`audio content block ${index} meta`, block.meta, new Set(["weight", "text"]));
     const weight = block.meta?.weight;
-    if (audio.length === 1 && (!hasOwnWeight(block) || weight === undefined)) continue;
-    if (!isPositiveFiniteNumber(weight)) {
+    const soloUnweighted = audio.length === 1 && (!hasOwnWeight(block) || weight === undefined);
+    if (!soloUnweighted && !isPositiveFiniteNumber(weight)) {
       throw new GenerationValidationError(`audio content block ${index} meta.weight must be a finite positive number`);
+    }
+    // Present-but-`undefined` (explicit key, undefined value) is treated the
+    // same as absent, matching the weight handling above -- callers that
+    // spread in an optional field they didn't end up setting shouldn't have
+    // to delete the key themselves.
+    const refText = block.meta?.text;
+    if (refText !== undefined && (typeof refText !== "string" || !refText.trim())) {
+      throw new GenerationValidationError(`audio content block ${index} meta.text must be a non-empty string`);
     }
   }
 }
@@ -154,8 +162,15 @@ function buildPayload(input: ResolvedGenerationRequest): Record<string, unknown>
     return payload;
   }
 
+  // The bare `ref_audio` shortcut has no way to carry a transcript, so a
+  // solo reference that supplies meta.text must go through `references`
+  // below even without an explicit weight -- the wire contract rejects a
+  // missing/zero weight there regardless of reference count, so default a
+  // still-missing one to 1 rather than leave it absent (see the "routes a
+  // solo reference with only meta.text..." test for the exact payload shape).
   const firstAudio = audio[0];
-  if (audio.length === 1 && firstAudio && (!hasOwnWeight(firstAudio) || firstAudio.meta?.weight === undefined)) {
+  const firstHasText = firstAudio?.meta?.text !== undefined;
+  if (audio.length === 1 && firstAudio && !firstHasText && (!hasOwnWeight(firstAudio) || firstAudio.meta?.weight === undefined)) {
     if (firstAudio.source.type === "url") payload.ref_audio = firstAudio.source.url.trim();
     return payload;
   }
@@ -163,7 +178,8 @@ function buildPayload(input: ResolvedGenerationRequest): Record<string, unknown>
     payload.metadata = {
       references: audio.map((block) => ({
         url: block.source.type === "url" ? block.source.url.trim() : "",
-        weight: block.meta?.weight,
+        weight: block.meta?.weight ?? (audio.length === 1 ? 1 : undefined),
+        text: block.meta?.text,
       })),
     };
   }

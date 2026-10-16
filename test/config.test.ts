@@ -338,11 +338,15 @@ describe("config", () => {
     expect(higgs?.content.input.find((input) => input.type === "audio")?.description).toContain(
       "Dependency: use prior generated audio",
     );
+    expect(higgs?.content.input.find((input) => input.type === "audio")?.description).toContain(
+      "meta.text: optional transcript",
+    );
     expect(higgs?.examples?.map((example) => example.title)).toEqual([
       "Default voice",
       "Single reference",
       "Weighted single reference",
       "Multiple references",
+      "Multiple references with each clip's own transcript",
     ]);
     expect(JSON.parse(client.stringifyModelConfig("higgs-tts", { format: "json" }))).toEqual(higgs);
   });
