@@ -1,6 +1,91 @@
 import { describe, expect, it, vi } from "vitest";
-import { createDebugFetch, fetchTextWithTimeout, fetchWithTimeout } from "../src/http.js";
-import { createGenerationClient, GenerationTimeoutError, GenerationTransportError } from "../src/index.js";
+import {
+  createDebugFetch,
+  createRouterMetadataFetch,
+  fetchTextWithTimeout,
+  fetchWithTimeout,
+  validateRouterMetadata,
+} from "../src/http.js";
+import {
+  createGenerationClient,
+  GenerationConfigError,
+  GenerationTimeoutError,
+  GenerationTransportError,
+} from "../src/index.js";
+
+describe("router metadata headers", () => {
+  it("requires a platform for a caller task id", () => {
+    expect(() => validateRouterMetadata({ callerTaskId: "task-1" })).toThrow(
+      new GenerationConfigError("router.callerTaskId requires router.platform"),
+    );
+  });
+
+  it.each(["task 1", "task/1", ""])("rejects %j as a caller task id", (callerTaskId) => {
+    expect(() => validateRouterMetadata({ platform: "cohub", callerTaskId })).toThrow(
+      "router.callerTaskId must match [A-Za-z0-9._-]{1,64}",
+    );
+  });
+
+  it("adds the headers to every request and keeps caller-provided values", async () => {
+    const calls: Array<{ input: string | URL | Request; init: RequestInit }> = [];
+    const fetchMock = async (input: string | URL | Request, init?: RequestInit) => {
+      calls.push({ input, init: init ?? {} });
+      return new Response("{}", { status: 200 });
+    };
+    const fetchWithRouter = createRouterMetadataFetch(
+      fetchMock as typeof fetch,
+      validateRouterMetadata({ userUuid: "user-1", platform: "cohub", callerTaskId: "task-1", retry: 2 }),
+    );
+
+    await fetchWithRouter("https://router.neta.art/v1/images/generations", {
+      method: "POST",
+      headers: { "X-Neta-Platform": "custom" },
+    });
+
+    const headers = new Headers(calls[0]?.init.headers);
+    expect(headers.get("x-neta-platform")).toBe("custom");
+    expect(headers.get("x-neta-user-uuid")).toBe("user-1");
+    expect(headers.get("x-neta-caller-task-id")).toBe("task-1");
+    expect(headers.get("x-neta-retry-count")).toBe("2");
+  });
+
+  it("sends the headers on the submit and every task poll", async () => {
+    vi.useFakeTimers();
+    const calls: Array<{ url: string; headers: Headers }> = [];
+    const fetchMock = async (url: string | URL | Request, init?: RequestInit) => {
+      calls.push({ url: String(url), headers: new Headers(init?.headers) });
+      if (String(url).endsWith("/v1/video/generations")) {
+        return new Response(JSON.stringify({ task_id: "task-1" }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ data: { status: "SUCCESS", result_url: "https://example.com/out.mp4" } }), {
+        status: 200,
+      });
+    };
+    const client = createGenerationClient({
+      apiKey: "key",
+      fetch: fetchMock as typeof fetch,
+      router: { platform: "cohub", callerTaskId: "task-1" },
+    });
+
+    try {
+      const promise = client.generate({
+        model: "seedance-2-0-fast",
+        content: [{ type: "text", text: "hello" }],
+        parameters: { poll_interval: 1, max_wait: 30 },
+      });
+      await vi.advanceTimersByTimeAsync(1000);
+      await promise;
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(calls).toHaveLength(2);
+    for (const call of calls) {
+      expect(call.headers.get("x-neta-platform")).toBe("cohub");
+      expect(call.headers.get("x-neta-caller-task-id")).toBe("task-1");
+    }
+  });
+});
 
 describe("generation HTTP transport errors", () => {
   it("preserves connect timeout diagnostics in the thrown message and details", async () => {

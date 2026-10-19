@@ -11,7 +11,7 @@ import {
   writeGenerationModelDeclarations,
 } from "./config.js";
 import { GenerationConfigError } from "./errors.js";
-import { createDebugFetch, joinUrl } from "./http.js";
+import { createDebugFetch, createRouterMetadataFetch, joinUrl, validateRouterMetadata } from "./http.js";
 import {
   extractGenerationResultFields,
   extractGenerationResultHeaderFields,
@@ -172,7 +172,10 @@ export function createGenerationClient(options: CreateGenerationClientOptions = 
   const fetchFn = options.fetch ?? globalThis.fetch;
   if (!fetchFn) throw new GenerationConfigError("A fetch implementation is required");
   const debug = resolveDebugConfig(options.debug);
-  const adapterFetch = debug ? createDebugFetch(fetchFn, debug) : fetchFn;
+  const routerFetch = options.router
+    ? createRouterMetadataFetch(fetchFn, validateRouterMetadata(options.router))
+    : fetchFn;
+  const adapterFetch = debug ? createDebugFetch(routerFetch, debug) : routerFetch;
   const systemOneConfig = {
     ...options.systemOne,
     baseURL: options.systemOne?.baseURL ?? joinUrl(options.baseUrl ?? DEFAULT_BASE_URL, "typesafe"),

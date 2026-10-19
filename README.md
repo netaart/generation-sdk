@@ -54,6 +54,17 @@ const client = createGenerationClient({
 });
 ```
 
+Pass `router` to identify the calling task to a neta-router base URL. The SDK sends `userUuid`, `platform`, `callerTaskId`, and `retry` as `X-Neta-*` headers on every request, including task polling, so the router can write them onto the media it archives:
+
+```ts
+const client = createGenerationClient({
+  apiKey: process.env.NETA_ROUTER_API_KEY!,
+  router: { platform: "cohub", callerTaskId: taskRunId },
+});
+```
+
+`callerTaskId` requires `platform`, and both must match `[A-Za-z0-9._-]{1,64}`; other values throw `GenerationConfigError` when the client is created. A request that already sets one of these headers keeps its own value. Archived media then carries `x-oss-meta-caller-task-id` and `x-oss-meta-platform`, readable with a `HEAD` of the public URL. Use this option only when `baseUrl` points at a neta-router endpoint, because every request from the client carries the headers.
+
 ## Jev System One
 
 `systemOne()` uses `@typesafe-ai/sdk@0.6.0` for requests, typed answers, cancellation, retries, and errors. Jev models are available through the existing local `listModels()`, `getModel()`, YAML export, and CLI discovery APIs.

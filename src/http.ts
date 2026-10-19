@@ -1,6 +1,55 @@
-import { GenerationTimeoutError, GenerationTransportError, type GenerationTransportErrorDetails } from "./errors.js";
-import type { GenerationDebugConfig } from "./types.js";
+import {
+  GenerationConfigError,
+  GenerationTimeoutError,
+  GenerationTransportError,
+  type GenerationTransportErrorDetails,
+} from "./errors.js";
+import type { GenerationDebugConfig, GenerationRouterMetadata } from "./types.js";
 import { compactObject } from "./utils.js";
+
+const routerMetadataValuePattern = /^[A-Za-z0-9._-]{1,64}$/;
+
+// neta-router 从这些请求头读取调用方身份；caller task id 要求同时给出 platform，取值还要能写成 OSS user metadata。
+export function validateRouterMetadata(metadata: GenerationRouterMetadata): Record<string, string> {
+  const headers: Record<string, string> = {};
+  if (metadata.userUuid !== undefined) headerOrThrow(headers, "X-Neta-User-Uuid", "userUuid", metadata.userUuid);
+  if (metadata.platform !== undefined) headerOrThrow(headers, "X-Neta-Platform", "platform", metadata.platform);
+  if (metadata.callerTaskId !== undefined) {
+    headerOrThrow(headers, "X-Neta-Caller-Task-Id", "callerTaskId", metadata.callerTaskId);
+    if (metadata.platform === undefined) {
+      throw new GenerationConfigError("router.callerTaskId requires router.platform");
+    }
+  }
+  if (metadata.retry !== undefined) {
+    if (!Number.isInteger(metadata.retry) || metadata.retry < 0) {
+      throw new GenerationConfigError("router.retry must be a non-negative integer");
+    }
+    headers["X-Neta-Retry-Count"] = String(metadata.retry);
+  }
+  return headers;
+}
+
+function headerOrThrow(headers: Record<string, string>, name: string, field: string, value: string): void {
+  if (!routerMetadataValuePattern.test(value)) {
+    throw new GenerationConfigError(`router.${field} must match [A-Za-z0-9._-]{1,64}`);
+  }
+  headers[name] = value;
+}
+
+// 调用方自己给出的 X-Neta-* 请求头优先。
+export function createRouterMetadataFetch(fetchFn: typeof fetch, headers: Record<string, string>): typeof fetch {
+  if (Object.keys(headers).length === 0) return fetchFn;
+  return (async (input: string | URL | Request, init?: RequestInit) => {
+    const requestHeaders = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
+    for (const [name, value] of Object.entries(headers)) {
+      if (!requestHeaders.has(name)) requestHeaders.set(name, value);
+    }
+    if (input instanceof Request && init === undefined) {
+      return fetchFn(new Request(input, { headers: requestHeaders }));
+    }
+    return fetchFn(input, { ...init, headers: requestHeaders });
+  }) as typeof fetch;
+}
 
 function headersToRecord(headers: HeadersInit | undefined): Record<string, string> {
   if (!headers) return {};

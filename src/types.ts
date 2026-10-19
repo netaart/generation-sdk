@@ -277,12 +277,25 @@ export type GenerationAdapter = ((input: GenerationAdapterInput) => Promise<Gene
   validate?: (input: ResolvedGenerationRequest) => void;
 };
 
+export type GenerationRouterMetadata = {
+  /** Caller identity consumed by neta-router for analytics. */
+  userUuid?: string;
+  /** Caller platform written to archived media as x-oss-meta-platform. */
+  platform?: string;
+  /** Caller task id written to archived media as x-oss-meta-caller-task-id; requires platform. */
+  callerTaskId?: string;
+  /** Caller retry attempt count consumed by neta-router for analytics. */
+  retry?: number;
+};
+
 export type CreateGenerationClientOptions = {
   apiKey?: string;
   baseUrl?: string;
   models?: GenerationModelDeclaration[];
   includeBuiltinModels?: boolean;
   fetch?: typeof fetch;
+  /** Internal neta-router metadata sent as X-Neta-* headers on every request, including task polling. */
+  router?: GenerationRouterMetadata;
   sourceResolver?: GenerationSourceResolver;
   adapters?: Record<string, GenerationAdapter>;
   debug?: boolean | GenerationDebugOptions;
