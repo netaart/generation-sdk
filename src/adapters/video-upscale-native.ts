@@ -1,4 +1,9 @@
-import { GenerationProviderError, GenerationTimeoutError, GenerationValidationError } from "../errors.js";
+import {
+  FAILURE_CATEGORY_HEADER,
+  GenerationProviderError,
+  GenerationTimeoutError,
+  GenerationValidationError,
+} from "../errors.js";
 import { fetchWithTimeout, joinUrl } from "../http.js";
 import { taskPollTicks } from "../task-poll.js";
 import type { GenerationAdapterInput, GenerationContentBlock } from "../types.js";
@@ -80,6 +85,15 @@ function extractTaskStatus(response: TaskResponse) {
 }
 
 async function requestJson(input: GenerationAdapterInput, path: string, init: RequestInit): Promise<unknown> {
+  return (await requestJsonResponse(input, path, init)).body;
+}
+
+// 任务查询还要读取失败类别响应头：任务被审核拦截时，查询本身是 200。
+async function requestJsonResponse(
+  input: GenerationAdapterInput,
+  path: string,
+  init: RequestInit,
+): Promise<{ body: unknown; category: string | undefined }> {
   const response = await fetchWithTimeout(
     input.context.fetch,
     joinUrl(input.context.baseUrl, path),
@@ -110,7 +124,7 @@ async function requestJson(input: GenerationAdapterInput, path: string, init: Re
       ...(isRecord(parsed) ? { details: parsed } : {}),
     });
   }
-  return parsed;
+  return { body: parsed, category: response.headers.get(FAILURE_CATEGORY_HEADER) ?? undefined };
 }
 
 function validateResolvedUrl(value: string): void {
@@ -142,9 +156,10 @@ export async function videoUpscaleNativeAdapter(input: GenerationAdapterInput): 
   const taskId = extractTaskId(task);
 
   for await (const _ of taskPollTicks(maxWaitSec * 1000, pollIntervalSec * 1000)) {
-    const rawStatus = (await requestJson(input, `/v1/video/generations/${encodeURIComponent(taskId)}`, {
+    const response = await requestJsonResponse(input, `/v1/video/generations/${encodeURIComponent(taskId)}`, {
       method: "GET",
-    })) as TaskResponse;
+    });
+    const rawStatus = response.body as TaskResponse;
     const status = extractTaskStatus(rawStatus);
 
     if (status.status === "succeeded") {
@@ -164,6 +179,7 @@ export async function videoUpscaleNativeAdapter(input: GenerationAdapterInput): 
     if (status.status === "failed") {
       throw new GenerationProviderError(`Video upscale failed${status.message ? `: ${status.message}` : ""}`, {
         details: compactObject({ taskId, rawStatus }),
+        category: response.category,
       });
     }
   }

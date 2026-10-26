@@ -397,6 +397,7 @@ function taskFailure(error: unknown, taskId: string, stage: string): GenerationP
     ...(provider?.status === undefined ? {} : { status: provider.status }),
     ...(provider?.body === undefined ? {} : { body: provider.body }),
     details: { ...provider?.details, task_id: taskId },
+    category: provider?.category,
   });
   failure.cause = error;
   return failure;

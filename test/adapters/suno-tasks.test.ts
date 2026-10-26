@@ -657,6 +657,45 @@ describe("suno.tasks adapter", () => {
     vi.useRealTimers();
   });
 
+  it("marks a Suno task the gateway reports as moderation blocked with the safety category", async () => {
+    vi.useFakeTimers();
+    const fetchMock = async (url: string | URL | Request) => {
+      if (String(url).endsWith("/suno/submit/music")) {
+        return new Response(JSON.stringify({ code: "success", data: "task_blocked" }), { status: 200 });
+      }
+      return new Response(
+        JSON.stringify({
+          code: "success",
+          data: {
+            task_id: "task_blocked",
+            action: "music",
+            status: "FAILURE",
+            fail_reason:
+              "moderation_failure/Your tags contain artist name hoyomix - we don't reference specific artists on Suno",
+          },
+        }),
+        { status: 200, headers: { "X-Error-Category": "safety" } },
+      );
+    };
+
+    const client = createGenerationClient({ apiKey: "key", fetch: fetchMock as typeof fetch });
+    const promise = client
+      .generate({
+        model: "suno_music_chirp_fenix",
+        content: [{ type: "text", text: "warm piano" }],
+        parameters: { poll_interval: 1, max_wait: 30 },
+      })
+      .catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(1000);
+    const error = await promise;
+    vi.useRealTimers();
+    expect(error).toMatchObject({
+      message: "Suno task failed",
+      category: "safety",
+      details: { task_id: "task_blocked" },
+    });
+  });
+
   it("returns immediate outputs for non-polled Suno operations", async () => {
     const calls: Array<{ url: string; init: RequestInit }> = [];
     const fetchMock = async (url: string | URL | Request, init?: RequestInit) => {

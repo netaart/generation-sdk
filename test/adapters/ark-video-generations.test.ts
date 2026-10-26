@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { createGenerationClient, type GenerationContentBlock, type GenerationProviderError } from "../../src/index.js";
+import {
+  createGenerationClient,
+  type GenerationContentBlock,
+  type GenerationProviderError,
+  isGenerationSafetyError,
+} from "../../src/index.js";
 
 type FetchCall = { url: string; init: RequestInit };
 
@@ -365,6 +370,84 @@ describe("ark.videoGenerations adapter", () => {
     await vi.advanceTimersByTimeAsync(1000);
     await promise;
     vi.useRealTimers();
+  });
+
+  it("marks a task the gateway reports as moderation blocked with the safety category", async () => {
+    vi.useFakeTimers();
+    const failedTask = {
+      data: {
+        status: "failed",
+        error: {
+          code: "OutputVideoSensitiveContentDetected.PolicyViolation",
+          message: "The request failed because the output video may be related to copyright restrictions.",
+        },
+      },
+    };
+    const fetchMock = async (url: string | URL | Request) => {
+      if (String(url).endsWith("/v1/video/generations")) {
+        return new Response(JSON.stringify({ task_id: "task-1" }), { status: 200 });
+      }
+      return new Response(JSON.stringify(failedTask), { status: 200, headers: { "X-Error-Category": "safety" } });
+    };
+
+    const client = createGenerationClient({ apiKey: "key", fetch: fetchMock as typeof fetch });
+    const promise = client
+      .generate({
+        model: "seedance-2-0-fast",
+        content: [{ type: "text", text: "hello" }],
+        parameters: { poll_interval: 1, max_wait: 30 },
+      })
+      .catch((error: unknown) => error);
+
+    await vi.advanceTimersByTimeAsync(1000);
+    const error = await promise;
+    vi.useRealTimers();
+    expect(error).toMatchObject({ name: "GenerationProviderError", category: "safety", details: { taskId: "task-1" } });
+    expect(isGenerationSafetyError(error)).toBe(true);
+  });
+
+  it("leaves an ordinary failed task without a failure category", async () => {
+    vi.useFakeTimers();
+    const fetchMock = async (url: string | URL | Request) => {
+      if (String(url).endsWith("/v1/video/generations")) {
+        return new Response(JSON.stringify({ task_id: "task-1" }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ data: { status: "failed", error: { message: "service unavailable" } } }), {
+        status: 200,
+      });
+    };
+
+    const client = createGenerationClient({ apiKey: "key", fetch: fetchMock as typeof fetch });
+    const promise = client
+      .generate({
+        model: "seedance-2-0-fast",
+        content: [{ type: "text", text: "hello" }],
+        parameters: { poll_interval: 1, max_wait: 30 },
+      })
+      .catch((error: unknown) => error);
+
+    await vi.advanceTimersByTimeAsync(1000);
+    const error = await promise;
+    vi.useRealTimers();
+    expect(error).toMatchObject({ name: "GenerationProviderError", category: undefined });
+    expect(isGenerationSafetyError(error)).toBe(false);
+  });
+
+  it("reads the failure category from a gateway error body", async () => {
+    const body = JSON.stringify({
+      error: { code: "prompt_blocked", message: "The request failed because the input video may contain real person." },
+      new_api: { request_id: "req-1", failure_category: "safety" },
+    });
+    const client = createGenerationClient({
+      apiKey: "key",
+      fetch: (async () => new Response(body, { status: 400 })) as typeof fetch,
+    });
+
+    const error = await client
+      .generate({ model: "seedance-2-0-fast", content: [{ type: "text", text: "hello" }] })
+      .catch((caught: unknown) => caught);
+
+    expect(error).toMatchObject({ name: "GenerationProviderError", status: 400, category: "safety" });
   });
 
   it("rejects Seedance 2.5 first-frame tasks that set a fixed ratio", async () => {

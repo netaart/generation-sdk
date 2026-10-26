@@ -1,4 +1,9 @@
-import { GenerationProviderError, GenerationTimeoutError, GenerationValidationError } from "../errors.js";
+import {
+  FAILURE_CATEGORY_HEADER,
+  GenerationProviderError,
+  GenerationTimeoutError,
+  GenerationValidationError,
+} from "../errors.js";
 import { fetchWithTimeout, joinUrl } from "../http.js";
 import { taskPollTicks } from "../task-poll.js";
 import type { GenerationAdapterInput, GenerationContentBlock, GenerationSource } from "../types.js";
@@ -277,6 +282,15 @@ function normalizeTaskStatus(response: ArkTaskStatusResponse) {
 }
 
 async function requestJson(input: GenerationAdapterInput, path: string, init: RequestInit): Promise<unknown> {
+  return (await requestJsonResponse(input, path, init)).body;
+}
+
+// 任务查询还要读取失败类别响应头：任务被审核拦截时，查询本身是 200。
+async function requestJsonResponse(
+  input: GenerationAdapterInput,
+  path: string,
+  init: RequestInit,
+): Promise<{ body: unknown; category: string | undefined }> {
   const response = await fetchWithTimeout(
     input.context.fetch,
     joinUrl(input.context.baseUrl, path),
@@ -295,7 +309,7 @@ async function requestJson(input: GenerationAdapterInput, path: string, init: Re
     const body = await response.text().catch(() => response.statusText);
     throw new GenerationProviderError("Video generation provider request failed", { status: response.status, body });
   }
-  return response.json();
+  return { body: await response.json(), category: response.headers.get(FAILURE_CATEGORY_HEADER) ?? undefined };
 }
 
 export async function arkVideoGenerationsAdapter(input: GenerationAdapterInput): Promise<GenerationContentBlock[]> {
@@ -355,9 +369,10 @@ export async function arkVideoGenerationsAdapter(input: GenerationAdapterInput):
   const taskId = extractTaskId(task);
 
   for await (const _ of taskPollTicks(maxWaitSec * 1000, pollIntervalSec * 1000)) {
-    const rawStatus = (await requestJson(input, `/v1/video/generations/${encodeURIComponent(taskId)}`, {
+    const response = await requestJsonResponse(input, `/v1/video/generations/${encodeURIComponent(taskId)}`, {
       method: "GET",
-    })) as ArkTaskStatusResponse;
+    });
+    const rawStatus = response.body as ArkTaskStatusResponse;
     const status = normalizeTaskStatus(rawStatus);
 
     if (status.status === "succeeded") {
@@ -383,7 +398,10 @@ export async function arkVideoGenerationsAdapter(input: GenerationAdapterInput):
     }
 
     if (["failed", "expired", "cancelled"].includes(status.status)) {
-      throw new GenerationProviderError(`Video generation ${status.status}`, { details: { taskId, rawStatus } });
+      throw new GenerationProviderError(`Video generation ${status.status}`, {
+        details: { taskId, rawStatus },
+        category: response.category,
+      });
     }
   }
 

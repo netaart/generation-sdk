@@ -1,4 +1,4 @@
-import { GenerationProviderError, GenerationValidationError } from "../errors.js";
+import { FAILURE_CATEGORY_HEADER, GenerationProviderError, GenerationValidationError } from "../errors.js";
 import { fetchWithTimeout, joinUrl } from "../http.js";
 import { taskPollTicks } from "../task-poll.js";
 import type {
@@ -196,6 +196,15 @@ function songBody(input: ResolvedGenerationRequest): Record<string, unknown> {
 }
 
 async function requestJson(input: GenerationAdapterInput, path: string, init: RequestInit): Promise<unknown> {
+  return (await requestJsonResponse(input, path, init)).body;
+}
+
+// 任务查询还要读取失败类别响应头：任务被审核拦截时，查询本身是 200。
+async function requestJsonResponse(
+  input: GenerationAdapterInput,
+  path: string,
+  init: RequestInit,
+): Promise<{ body: unknown; category: string | undefined }> {
   const response = await fetchWithTimeout(
     input.context.fetch,
     joinUrl(input.context.baseUrl, path),
@@ -213,8 +222,9 @@ async function requestJson(input: GenerationAdapterInput, path: string, init: Re
   if (!response.ok) {
     throw new GenerationProviderError("Song generation request failed", { status: response.status, body });
   }
+  const category = response.headers.get(FAILURE_CATEGORY_HEADER) ?? undefined;
   try {
-    return body ? JSON.parse(body) : {};
+    return { body: body ? JSON.parse(body) : {}, category };
   } catch {
     throw new GenerationProviderError("Song generation returned invalid JSON", { status: response.status, body });
   }
@@ -231,8 +241,10 @@ async function generateSong(input: GenerationAdapterInput): Promise<GenerationCo
   }
 
   for await (const _ of taskPollTicks(undefined, POLL_INTERVAL_SEC * 1000)) {
-    const raw = await requestJson(input, `/v1/audio/generations/${encodeURIComponent(taskId)}`, { method: "GET" });
-    const task = isRecord(raw) ? raw : {};
+    const response = await requestJsonResponse(input, `/v1/audio/generations/${encodeURIComponent(taskId)}`, {
+      method: "GET",
+    });
+    const task = isRecord(response.body) ? response.body : {};
     switch (task.status) {
       case "completed": {
         const audioUrl = asString(task.audio_url);
@@ -256,6 +268,7 @@ async function generateSong(input: GenerationAdapterInput): Promise<GenerationCo
         const message = asString(error?.message);
         throw new GenerationProviderError(`Song generation failed${message ? `: ${message}` : ""}`, {
           details: compactObject({ taskId, code, message }),
+          category: response.category,
         });
       }
       default:

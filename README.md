@@ -911,6 +911,7 @@ import {
   GenerationProviderError,
   GenerationTransportError,
   GenerationValidationError,
+  isGenerationSafetyError,
 } from "@neta-art/generation";
 
 try {
@@ -918,12 +919,19 @@ try {
 } catch (error) {
   if (error instanceof GenerationValidationError) {
     console.error("Invalid request", error.message);
+  } else if (isGenerationSafetyError(error)) {
+    console.error("Blocked by content moderation", error.message);
   } else if (error instanceof GenerationTransportError) {
     console.error("Provider transport failed", error.message);
     console.error(error.details?.causeCode, error.details?.causeSyscall);
   } else if (error instanceof GenerationProviderError) {
     console.error("Provider failed", error.message);
-    console.error(error.status, error.details?.requestId, error.details?.code);
+    console.error(error.status, error.category, error.details?.requestId, error.details?.code);
   }
 }
 ```
+
+`GenerationProviderError.category` is the gateway failure category. A failed request reads it from
+`new_api.failure_category` in the error body. A task that fails after it was accepted (Seedance, MiniMax H3, video
+upscale, song generation, Suno) reads it from the `X-Error-Category` header of the task query. `safety` means the request
+or the task was blocked by content moderation; `isGenerationSafetyError()` checks for it.

@@ -1,4 +1,10 @@
-import { GenerationProviderError, GenerationTimeoutError, GenerationValidationError } from "../errors.js";
+import {
+  FAILURE_CATEGORY_HEADER,
+  failureCategoryOf,
+  GenerationProviderError,
+  GenerationTimeoutError,
+  GenerationValidationError,
+} from "../errors.js";
 import { fetchWithTimeout, joinUrl } from "../http.js";
 import { taskPollTicks } from "../task-poll.js";
 import type {
@@ -270,6 +276,15 @@ function validateSunoPayload(operation: string, payload: Record<string, unknown>
 }
 
 async function requestJson(input: GenerationAdapterInput, path: string, init: RequestInit): Promise<TaskResponse> {
+  return (await requestJsonResponse(input, path, init)).body;
+}
+
+// 任务查询还要读取失败类别响应头：任务被审核拦截时，查询本身是 200。
+async function requestJsonResponse(
+  input: GenerationAdapterInput,
+  path: string,
+  init: RequestInit,
+): Promise<{ body: TaskResponse; category: string | undefined }> {
   const response = await fetchWithTimeout(
     input.context.fetch,
     joinUrl(input.context.baseUrl, path),
@@ -294,9 +309,10 @@ async function requestJson(input: GenerationAdapterInput, path: string, init: Re
     throw new GenerationProviderError("Suno provider request failed", {
       status: response.status,
       details: { body: parsed },
+      category: failureCategoryOf(parsed),
     });
   }
-  return parsed;
+  return { body: parsed, category: response.headers.get(FAILURE_CATEGORY_HEADER) ?? undefined };
 }
 
 function appendUrlBlock(
@@ -419,14 +435,14 @@ async function pollSunoTask(
   maxWaitSec: number,
 ): Promise<GenerationContentBlock[]> {
   for await (const _ of taskPollTicks(maxWaitSec * 1000, pollIntervalSec * 1000)) {
-    let raw: TaskResponse;
+    let response: { body: TaskResponse; category: string | undefined };
     try {
-      raw = await requestJson(input, `/suno/fetch/${encodeURIComponent(taskId)}`, { method: "GET" });
+      response = await requestJsonResponse(input, `/suno/fetch/${encodeURIComponent(taskId)}`, { method: "GET" });
     } catch (error) {
       if (error instanceof GenerationProviderError) throw error;
       continue;
     }
-    const data = requireSuccess(raw, "Suno task fetch failed");
+    const data = requireSuccess(response.body, "Suno task fetch failed");
     const task = normalizeTask(operation, data);
     if (!task) throw new GenerationProviderError("Suno task fetch returned invalid task data", { details: { data } });
 
@@ -439,6 +455,7 @@ async function pollSunoTask(
           status: task.status,
           fail_reason: task.fail_reason,
         },
+        category: response.category,
       });
     }
   }
