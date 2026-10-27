@@ -15,6 +15,7 @@ import {
 
 const REFERENCE_URL = "https://example.com/reference.mp3";
 const SECOND_REFERENCE_URL = "https://example.com/reference-2.mp3";
+const QWEN_TEXT = "这是用于语音合成测试的一整句中文示例文本。";
 
 function routerSuccess(
   body: Record<string, unknown> = {},
@@ -45,8 +46,8 @@ function audio(url = REFERENCE_URL, meta?: Record<string, unknown>): GenerationC
 
 function qwenDesignRequest(overrides: Partial<GenerateRequest> = {}): GenerateRequest {
   return {
-    model: "qwen-tts",
-    content: [{ type: "text", text: "这是需要朗读的文本。" }],
+    model: "qwen-audio-3.1-tts-flash",
+    content: [{ type: "text", text: QWEN_TEXT }],
     meta: { voice_prompt: "沉稳清晰的男性播音员声音" },
     ...overrides,
   };
@@ -73,11 +74,11 @@ describe("openai.audioSpeech adapter requests", () => {
     const { client, calls } = recordingClient(() =>
       routerSuccess({}, { headers: { "x-request-id": "request-primary", "x-oneapi-request-id": "request-fallback" } }),
     );
-    const input = "  原样保留的朗读文本。\n";
+    const input = "  原样保留的朗读文本内容，不应被修改。\n";
     const voicePrompt = "  沉稳清晰的声音。\n";
 
     const output = await client.generate({
-      model: "qwen-tts",
+      model: "qwen-audio-3.1-tts-flash",
       content: [{ type: "text", text: input }],
       meta: { voice_prompt: voicePrompt },
     });
@@ -89,7 +90,7 @@ describe("openai.audioSpeech adapter requests", () => {
       new Headers({ Authorization: "Bearer secret-key", "Content-Type": "application/json" }),
     );
     expect(requestBody(calls[0])).toEqual({
-      model: "qwen-tts",
+      model: "qwen-audio-3.1-tts-flash",
       input,
       metadata: { voice_prompt: voicePrompt },
     });
@@ -105,13 +106,13 @@ describe("openai.audioSpeech adapter requests", () => {
   it("maps Qwen reference audio and trims only its URL", async () => {
     const { client, calls } = recordingClient();
     await client.generate({
-      model: "qwen-tts",
-      content: [{ type: "text", text: "短句" }, audio(`  ${REFERENCE_URL}\n`)],
+      model: "qwen-audio-3.1-tts-flash",
+      content: [{ type: "text", text: QWEN_TEXT }, audio(`  ${REFERENCE_URL}\n`)],
     });
 
     expect(requestBody(calls[0])).toEqual({
-      model: "qwen-tts",
-      input: "短句",
+      model: "qwen-audio-3.1-tts-flash",
+      input: QWEN_TEXT,
       ref_audio: REFERENCE_URL,
     });
   });
@@ -125,8 +126,8 @@ describe("openai.audioSpeech adapter requests", () => {
     );
 
     expect(requestBody(calls[0])).toEqual({
-      model: "qwen-tts",
-      input: "这是需要朗读的文本。",
+      model: "qwen-audio-3.1-tts-flash",
+      input: QWEN_TEXT,
       metadata: { voice_prompt: "清晰女声" },
     });
   });
@@ -161,7 +162,9 @@ describe("openai.audioSpeech adapter validation", () => {
   ])("rejects $name before fetch", async ({ content }) => {
     const fetchMock = vi.fn(async () => routerSuccess());
     const client = createGenerationClient({ apiKey: "key", fetch: fetchMock as typeof fetch });
-    await expect(client.generate({ model: "qwen-tts", content })).rejects.toBeInstanceOf(GenerationValidationError);
+    await expect(client.generate({ model: "qwen-audio-3.1-tts-flash", content })).rejects.toBeInstanceOf(
+      GenerationValidationError,
+    );
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -169,8 +172,8 @@ describe("openai.audioSpeech adapter validation", () => {
     const client = createGenerationClient({ apiKey: "key" });
     expect(() =>
       client.validate({
-        model: "qwen-tts",
-        content: [{ type: "text", text: "有效语音文本" }],
+        model: "qwen-audio-3.1-tts-flash",
+        content: [{ type: "text", text: QWEN_TEXT }],
         meta: { preview_text: "已经失效的文本来源" },
       }),
     ).toThrow("requires one reference audio or meta.voice_prompt");
@@ -184,7 +187,7 @@ describe("openai.audioSpeech adapter validation", () => {
     {
       name: "both voice sources",
       request: qwenDesignRequest({
-        content: [{ type: "text", text: "文本" }, audio()],
+        content: [{ type: "text", text: QWEN_TEXT }, audio()],
       }),
     },
     {
@@ -194,7 +197,7 @@ describe("openai.audioSpeech adapter validation", () => {
     {
       name: "audio weight",
       request: qwenDesignRequest({
-        content: [{ type: "text", text: "文本" }, audio(REFERENCE_URL, { weight: 1 })],
+        content: [{ type: "text", text: QWEN_TEXT }, audio(REFERENCE_URL, { weight: 1 })],
         meta: {},
       }),
     },
@@ -204,17 +207,17 @@ describe("openai.audioSpeech adapter validation", () => {
   });
 
   it("enforces Qwen reference limits inside the adapter hook when a declaration is overridden", () => {
-    const declaration = getBuiltinGenerationModel("qwen-tts");
-    if (!declaration) throw new Error("qwen-tts declaration is unavailable");
+    const declaration = getBuiltinGenerationModel("qwen-audio-3.1-tts-flash");
+    if (!declaration) throw new Error("qwen-audio-3.1-tts-flash declaration is unavailable");
     const audioSpec = declaration.content.input.find((spec) => spec.type === "audio");
-    if (!audioSpec) throw new Error("qwen-tts audio spec is unavailable");
+    if (!audioSpec) throw new Error("qwen-audio-3.1-tts-flash audio spec is unavailable");
     audioSpec.max = 2;
     const client = createGenerationClient({ models: [declaration], includeBuiltinModels: false, apiKey: "key" });
 
     expect(() =>
       client.validate({
-        model: "qwen-tts",
-        content: [{ type: "text", text: "文本" }, audio(), audio(SECOND_REFERENCE_URL)],
+        model: "qwen-audio-3.1-tts-flash",
+        content: [{ type: "text", text: QWEN_TEXT }, audio(), audio(SECOND_REFERENCE_URL)],
       }),
     ).toThrow("supports at most one reference audio");
   });
@@ -239,23 +242,23 @@ describe("openai.audioSpeech adapter validation", () => {
   });
 
   it.each([
-    { model: "qwen-audio-3.0-tts-plus", text: "a".repeat(14) },
-    { model: "qwen-audio-3.0-tts-flash", text: "😀".repeat(14) },
-  ])("rejects $model input below 15 Unicode code points", ({ model, text }) => {
+    { text: "a".repeat(14) },
+    { text: "😀".repeat(14) },
+  ])("rejects qwen-audio-3.1-tts-flash input below 15 Unicode code points ($text)", ({ text }) => {
     const client = createGenerationClient({ apiKey: "key" });
-    expect(() => client.validate({ model, content: [{ type: "text", text }, audio()] })).toThrow(
-      "requires input of at least 15 Unicode code points",
-    );
+    expect(() =>
+      client.validate({ model: "qwen-audio-3.1-tts-flash", content: [{ type: "text", text }, audio()] }),
+    ).toThrow("requires input of at least 15 Unicode code points");
   });
 
   it.each([
-    { model: "qwen-audio-3.0-tts-plus", text: "a".repeat(15) },
-    { model: "qwen-audio-3.0-tts-flash", text: ` ${"😀".repeat(15)} ` },
-    { model: "qwen-tts", text: "短" },
-    { model: "qwen-tts", text: "a".repeat(40) },
-  ])("accepts the $model input boundary", ({ model, text }) => {
+    { text: "a".repeat(15) },
+    { text: ` ${"😀".repeat(15)} ` },
+  ])("accepts the qwen-audio-3.1-tts-flash input boundary ($text)", ({ text }) => {
     const client = createGenerationClient({ apiKey: "key" });
-    expect(() => client.validate({ model, content: [{ type: "text", text }, audio()] })).not.toThrow();
+    expect(() =>
+      client.validate({ model: "qwen-audio-3.1-tts-flash", content: [{ type: "text", text }, audio()] }),
+    ).not.toThrow();
   });
 
   it.each<{ label: string; request: GenerateRequest }>([
@@ -281,22 +284,22 @@ describe("openai.audioSpeech adapter validation", () => {
     "s3://bucket/file.mp3",
   ])("rejects unsupported reference URL %s", (url) => {
     const client = createGenerationClient({ apiKey: "key" });
-    expect(() => client.validate({ model: "qwen-tts", content: [{ type: "text", text: "文本" }, audio(url)] })).toThrow(
-      GenerationValidationError,
-    );
+    expect(() =>
+      client.validate({ model: "qwen-audio-3.1-tts-flash", content: [{ type: "text", text: QWEN_TEXT }, audio(url)] }),
+    ).toThrow(GenerationValidationError);
   });
 
   it("rejects base64 reference audio through model validation", () => {
     const client = createGenerationClient({ apiKey: "key" });
     expect(() =>
       client.validate({
-        model: "qwen-tts",
+        model: "qwen-audio-3.1-tts-flash",
         content: [
-          { type: "text", text: "文本" },
+          { type: "text", text: QWEN_TEXT },
           { type: "audio", source: { type: "base64", mediaType: "audio/mpeg", data: "abc" } },
         ],
       }),
-    ).toThrow("audio source is not supported by qwen-tts: base64");
+    ).toThrow("audio source is not supported by qwen-audio-3.1-tts-flash: base64");
   });
 });
 
@@ -921,8 +924,8 @@ describe("openai.audioSpeech adapter errors and diagnostics", () => {
     });
 
     await client.generate({
-      model: "qwen-tts",
-      content: [{ type: "text", text: "文本" }, audio(reference)],
+      model: "qwen-audio-3.1-tts-flash",
+      content: [{ type: "text", text: QWEN_TEXT }, audio(reference)],
     });
 
     const serialized = JSON.stringify(events);

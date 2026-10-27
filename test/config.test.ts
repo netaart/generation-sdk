@@ -90,9 +90,7 @@ describe("config", () => {
     expect(byCategory["3d"].sort()).toEqual([...expected["3d"]]);
     expect(byCategory.decision.sort()).toEqual([...expected.decision]);
     for (const model of [
-      "qwen-tts",
-      "qwen-audio-3.0-tts-plus",
-      "qwen-audio-3.0-tts-flash",
+      "qwen-audio-3.1-tts-flash",
       "suno_cover_chirp_v5",
       "suno_image_to_song_chirp_v5",
       "suno_infill_chirp_v5",
@@ -284,7 +282,7 @@ describe("config", () => {
 
   it("publishes agent-discoverable audio speech declarations", () => {
     const client = createGenerationClient();
-    const qwenModels = ["qwen-tts", "qwen-audio-3.0-tts-plus", "qwen-audio-3.0-tts-flash"];
+    const qwenModels = ["qwen-audio-3.1-tts-flash"];
 
     for (const model of qwenModels) {
       const declaration = client.getModel(model);
@@ -304,23 +302,7 @@ describe("config", () => {
       expect(JSON.parse(client.stringifyModelConfig(model, { format: "json" }))).toEqual(declaration);
     }
 
-    const qwen = client.getModel("qwen-tts");
-    expect(qwen?.description).toBe(
-      "Modes: voice_prompt design OR one-reference clone. Default: unspecified Qwen design. Text: any length. Conflict: ask user; never combine/reinterpret. Dependency: clone prior generated audio.",
-    );
-    expect(qwen?.content.input.find((input) => input.type === "text")?.description).not.toContain(
-      "Unicode code points",
-    );
-
-    const plus = client.getModel("qwen-audio-3.0-tts-plus");
-    expect(plus?.description).toBe(
-      "Modes: voice_prompt design OR one-reference clone. Text: >=15 Unicode code points. Conflict: ask user; never combine/reinterpret. Dependency: clone prior generated audio.",
-    );
-    expect(plus?.content.input.find((input) => input.type === "text")?.description).toContain(
-      "at least 15 Unicode code points",
-    );
-
-    const flash = client.getModel("qwen-audio-3.0-tts-flash");
+    const flash = client.getModel("qwen-audio-3.1-tts-flash");
     expect(flash?.description).toBe(
       "Modes: voice_prompt design OR one-reference clone. Text: >=15 Unicode code points. Conflict: ask user; never combine/reinterpret. Dependency: clone prior generated audio.",
     );
@@ -341,7 +323,7 @@ describe("config", () => {
     expect(readme).toContain("Qwen: `voice_prompt` design OR one-reference clone");
     expect(readme).toContain("Conflict: reference + redesign requires user choice before generation");
     expect(readme).toContain("Dependency: clone prior generated audio");
-    expect(readme).toContain("Ranking: no declared Qwen quality, latency, or cost order");
+    expect(readme).toContain("Short text: input under 15 Unicode code points is rejected");
     expect(readme).not.toMatch(/quality prioritized over latency|latency prioritized over maximum quality/);
   });
 
@@ -578,7 +560,7 @@ describe("config", () => {
 
   it("does not publish the retired Qwen preview field", async () => {
     const client = createGenerationClient({ apiKey: "test" });
-    for (const model of ["qwen-tts", "qwen-audio-3.0-tts-plus", "qwen-audio-3.0-tts-flash"]) {
+    for (const model of ["qwen-audio-3.1-tts-flash"]) {
       expect(client.stringifyModelConfig(model)).not.toContain("preview_text");
     }
     expect(await readFile(join(process.cwd(), "README.md"), "utf8")).not.toContain("preview_text");
