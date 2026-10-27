@@ -298,6 +298,134 @@ describe("openai.audioSpeech adapter validation", () => {
   });
 });
 
+describe("openai.audioSpeech scene3 requests", () => {
+  it("sends a built-in voice request with the text exactly as given", async () => {
+    const { client, calls } = recordingClient();
+    const input = "  [sighs] We missed the last train again. [laughs] Well, at least the night is warm.\n";
+
+    await client.generate({ model: "scene3", content: [{ type: "text", text: input }] });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url).toBe("https://router.neta.art/v1/audio/speech");
+    expect(requestBody(calls[0])).toEqual({ model: "scene3", input });
+  });
+
+  it("sends one clone reference as a trimmed URL without a transcript", async () => {
+    const { client, calls } = recordingClient();
+
+    await client.generate({
+      model: "scene3",
+      content: [{ type: "text", text: "使用参考音频的声音朗读这段文本。" }, audio(`  ${REFERENCE_URL}\n`)],
+    });
+
+    expect(requestBody(calls[0])).toEqual({
+      model: "scene3",
+      input: "使用参考音频的声音朗读这段文本。",
+      metadata: { references: [{ url: REFERENCE_URL }] },
+    });
+  });
+
+  it("sends one clone reference with its trimmed transcript", async () => {
+    const { client, calls } = recordingClient();
+
+    await client.generate({
+      model: "scene3",
+      content: [
+        { type: "text", text: "使用参考音频的声音朗读这段文本。" },
+        audio(`  ${REFERENCE_URL}\n`, { text: "  参考音频里实际说的话。\n" }),
+      ],
+    });
+
+    expect(requestBody(calls[0])).toEqual({
+      model: "scene3",
+      input: "使用参考音频的声音朗读这段文本。",
+      metadata: { references: [{ url: REFERENCE_URL, text: "参考音频里实际说的话。" }] },
+    });
+  });
+});
+
+describe("openai.audioSpeech scene3 validation", () => {
+  function scene3Request(content: GenerationContentBlock[], overrides: Partial<GenerateRequest> = {}): GenerateRequest {
+    return { model: "scene3", content, ...overrides };
+  }
+
+  it.each<{ name: string; request: GenerateRequest; message: string }>([
+    { name: "zero text blocks", request: scene3Request([]), message: "Missing required text content block" },
+    {
+      name: "two text blocks",
+      request: scene3Request([
+        { type: "text", text: "一" },
+        { type: "text", text: "二" },
+      ]),
+      message: "Expected at most 1 text content block(s)",
+    },
+    {
+      name: "blank text",
+      request: scene3Request([{ type: "text", text: " \n " }]),
+      message: "scene3 requires exactly one non-empty text content block as input",
+    },
+    {
+      name: "two audio blocks",
+      request: scene3Request([{ type: "text", text: "文本" }, audio(), audio(SECOND_REFERENCE_URL)]),
+      message: "Expected at most 1 audio content block(s)",
+    },
+    {
+      name: "base64 audio source",
+      request: scene3Request([
+        { type: "text", text: "文本" },
+        { type: "audio", source: { type: "base64", mediaType: "audio/mpeg", data: "abc" } },
+      ]),
+      message: "audio source is not supported by scene3: base64",
+    },
+    {
+      name: "ftp reference URL",
+      request: scene3Request([{ type: "text", text: "文本" }, audio("ftp://example.com/reference.mp3")]),
+      message: "audio content block 0 URL must be a valid HTTP(S) URL",
+    },
+    {
+      name: "request meta voice_prompt",
+      request: scene3Request([{ type: "text", text: "文本" }], { meta: { voice_prompt: "沉稳清晰的男性播音员声音" } }),
+      message: "Unknown request.meta field: voice_prompt",
+    },
+    {
+      name: "audio meta weight",
+      request: scene3Request([{ type: "text", text: "文本" }, audio(REFERENCE_URL, { weight: 1 })]),
+      message: "Unknown audio content meta field: weight",
+    },
+    {
+      name: "empty audio meta.text",
+      request: scene3Request([{ type: "text", text: "文本" }, audio(REFERENCE_URL, { text: "" })]),
+      message: "audio content block 0 meta.text must be a non-empty string",
+    },
+    {
+      name: "numeric audio meta.text",
+      request: scene3Request([{ type: "text", text: "文本" }, audio(REFERENCE_URL, { text: 5 })]),
+      message: "audio content block 0 meta.text must be a non-empty string",
+    },
+  ])("rejects $name before fetch", async ({ request, message }) => {
+    const { client, calls } = recordingClient();
+    const error = await client.generate(request).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(GenerationValidationError);
+    expect((error as Error).message).toBe(message);
+    expect((error as Error).message).not.toMatch(/dr[a]ma|fi[s]h/i);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("enforces scene3 reference limits inside the adapter hook when a declaration is overridden", () => {
+    const declaration = getBuiltinGenerationModel("scene3");
+    if (!declaration) throw new Error("scene3 declaration is unavailable");
+    const audioSpec = declaration.content.input.find((spec) => spec.type === "audio");
+    if (!audioSpec) throw new Error("scene3 audio spec is unavailable");
+    audioSpec.max = 2;
+    const client = createGenerationClient({ models: [declaration], includeBuiltinModels: false, apiKey: "key" });
+
+    expect(() =>
+      client.validate(scene3Request([{ type: "text", text: "文本" }, audio(), audio(SECOND_REFERENCE_URL)])),
+    ).toThrow("scene3 supports at most one reference audio");
+  });
+});
+
 describe("openai.audioSpeech adapter success responses", () => {
   it("captures request ID headers in result metadata with the documented priority", async () => {
     const fetchMock = async () =>

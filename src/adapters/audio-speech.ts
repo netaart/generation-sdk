@@ -10,6 +10,7 @@ import type {
 const REQUEST_TIMEOUT_MS = 210_000;
 const QWEN_MODELS = new Set(["qwen-tts", "qwen-audio-3.0-tts-plus", "qwen-audio-3.0-tts-flash"]);
 const QWEN_AUDIO_3_MODELS = new Set(["qwen-audio-3.0-tts-plus", "qwen-audio-3.0-tts-flash"]);
+const SCENE3_MODEL = "scene3";
 
 type TextBlock = Extract<GenerationContentBlock, { type: "text" }>;
 type AudioBlock = Extract<GenerationContentBlock, { type: "audio" }>;
@@ -96,10 +97,30 @@ function validateQwen(input: ResolvedGenerationRequest, text: TextBlock, audio: 
   }
 }
 
+function validateScene3(input: ResolvedGenerationRequest, text: TextBlock, audio: AudioBlock[]): void {
+  if (audio.length > 1) {
+    throw new GenerationValidationError(`${input.declaration.model} supports at most one reference audio`);
+  }
+  validateMetaKeys("request.metadata", input.request.metadata, new Set());
+  validateMetaKeys("request.meta", input.request.meta, new Set());
+  validateMetaKeys("text content meta", text.meta, new Set());
+  for (const [index, block] of audio.entries()) {
+    validateMetaKeys("audio content meta", block.meta, new Set(["text"]));
+    const transcript = block.meta?.text;
+    if (transcript !== undefined && (typeof transcript !== "string" || !transcript.trim())) {
+      throw new GenerationValidationError(`audio content block ${index} meta.text must be a non-empty string`);
+    }
+  }
+}
+
 function validateAudioSpeechRequest(input: ResolvedGenerationRequest): void {
   const { text, audio } = validateCommonContent(input);
   if (QWEN_MODELS.has(input.declaration.model)) {
     validateQwen(input, text, audio);
+    return;
+  }
+  if (input.declaration.model === SCENE3_MODEL) {
+    validateScene3(input, text, audio);
     return;
   }
   throw new GenerationValidationError(`Unsupported audio speech model: ${input.declaration.model}`);
@@ -109,10 +130,28 @@ function requestIdFromHeaders(headers: Headers): string | undefined {
   return headers.get("x-request-id")?.trim() || headers.get("x-oneapi-request-id")?.trim() || undefined;
 }
 
+function buildScene3Payload(text: TextBlock, audio: AudioBlock[]): Record<string, unknown> {
+  const payload: Record<string, unknown> = { model: SCENE3_MODEL, input: text.text };
+  const reference = audio[0];
+  if (!reference) return payload;
+  if (reference.source.type !== "url") throw new GenerationValidationError("Audio speech input was not validated");
+  const transcript = reference.meta?.text;
+  payload.metadata = {
+    references: [
+      {
+        url: reference.source.url.trim(),
+        ...(typeof transcript === "string" ? { text: transcript.trim() } : {}),
+      },
+    ],
+  };
+  return payload;
+}
+
 function buildPayload(input: ResolvedGenerationRequest): Record<string, unknown> {
   const text = textBlocks(input)[0];
   if (!text) throw new GenerationValidationError("Audio speech input was not validated");
   const audio = audioBlocks(input);
+  if (input.declaration.model === SCENE3_MODEL) return buildScene3Payload(text, audio);
   const payload: Record<string, unknown> = {
     model: input.declaration.model,
     input: text.text,

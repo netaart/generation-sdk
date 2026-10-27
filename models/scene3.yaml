@@ -1,0 +1,49 @@
+schema: neta.generation.model.v1
+model: scene3
+title: Scene 3
+category: audio
+description: 'Modes: built-in voice, or one-reference clone. Direction: inline [bracketed] cues such as [sighs] or [laughs] in the text mark where a sound or a change of delivery lands. Dependency: clone prior generated audio.'
+adapter:
+  type: openai.audioSpeech
+content:
+  input:
+    - type: text
+      required: true
+      min: 1
+      max: 1
+      description: Exactly one non-empty text block to speak; inline [bracketed] cues direct the delivery.
+    - type: audio
+      required: false
+      max: 1
+      sources:
+        - url
+      description: 'Clone: one reference recording URL. meta.text: optional transcript of that recording, transcribed downstream when omitted. Dependency: use prior generated audio.'
+examples:
+  - title: Built-in voice with directions
+    request:
+      model: scene3
+      content:
+        - type: text
+          text: '[sighs] We missed the last train again. [laughs] Well, at least the night is warm.'
+  - title: Reference clone
+    request:
+      model: scene3
+      content:
+        - type: text
+          text: 使用参考音频的声音朗读这段文本。
+        - type: audio
+          source:
+            type: url
+            url: https://example.com/reference.mp3
+  - title: Reference clone with its transcript
+    request:
+      model: scene3
+      content:
+        - type: text
+          text: 使用参考音频的声音朗读这段文本。
+        - type: audio
+          source:
+            type: url
+            url: https://example.com/reference.mp3
+          meta:
+            text: 参考音频里实际说的话。
