@@ -2,7 +2,7 @@ schema: neta.generation.model.v1
 model: scene3
 title: Scene 3
 category: audio
-description: 'Modes: built-in voice, or one-reference clone. Direction: inline [bracketed] cues such as [sighs] or [laughs] in the text mark where a sound or a change of delivery lands. Dependency: clone prior generated audio.'
+description: 'Modes: built-in voice, or clone from up to 16 reference recordings. Direction: controls written in the text (see the text input), and the instructions parameter for a note on every sentence. Not supported: speed, response_format, voice, voice_prompt, stream, or a separate language parameter (write the language in the text, e.g. [language: ja]). Dependency: clone prior generated audio.'
 adapter:
   type: openai.audioSpeech
 content:
@@ -11,13 +11,31 @@ content:
       required: true
       min: 1
       max: 1
-      description: Exactly one non-empty text block to speak; inline [bracketed] cues direct the delivery.
+      description: 'Exactly one non-empty text block to speak, in any of about 80 languages. Controls written in the text: a cue such as [sighs], [laughs] or [pause] acts where it stands; a scoped tag such as <whisper>…</whisper>, <slow>…</slow> or <emphasis>…</emphasis> sets the delivery of the enclosed words; a director''s note, either a [style] prefix such as [with bright eager excitement] or `Direction: … Line: …`, sets the delivery of its line; <|speaker:N|> starts the turn of speaker N, from 0 to 15; [language: xx] at the end of a line names the main language; [audio tokens: N] at the end of a line hints its length, about 21.5 per second of audio. Cues, scoped tags and director''s notes are free natural language; the ones named here are only examples. [language: xx] and [audio tokens: N] are hints and are not spoken. Text in round parentheses ( ) is spoken as written, so put delivery in square brackets.'
     - type: audio
       required: false
-      max: 1
+      max: 16
       sources:
         - url
-      description: 'Clone: one reference recording URL. meta.text: optional transcript of that recording, transcribed downstream when omitted. Dependency: use prior generated audio.'
+      description: 'Clone: up to 16 reference recording URLs. Each works best at 1 to 20 s: one under 1 s is rejected, and one over 20 s is cut at a quiet point before the 20 s mark, and only the part before the cut is kept. With `<|speaker:N|>` tags in the text, the N-th recording (from 0) is that speaker''s voice; without tags they are joined into one voice. meta.text: optional transcript of that recording, transcribed downstream when omitted. Dependency: use prior generated audio.'
+parameters:
+  drama_value:
+    type: number
+    optional: true
+    default: 0.5
+    min: 0
+    max: 1
+    description: 'How lively the delivery is, from 0 to 1 (default 0.5, the recommended setting). Higher values give more varied intonation and fewer pauses; lower values are steadier. The effect is subtle: for a clear change of tone, use `instructions` or direction cues in the text. With the same `seed`, `drama_value` and input, the audio is the same.'
+  seed:
+    type: integer
+    optional: true
+    min: 0
+    max: 9007199254740991
+    description: Random seed for reproducibility.
+  instructions:
+    type: string
+    optional: true
+    description: Director's note applied to every sentence. At most 300 characters; [ ] < > | are removed.
 examples:
   - title: Built-in voice with directions
     request:
@@ -47,3 +65,19 @@ examples:
             url: https://example.com/reference.mp3
           meta:
             text: 参考音频里实际说的话。
+  - title: Two speakers, livelier delivery
+    request:
+      model: scene3
+      content:
+        - type: text
+          text: '<|speaker:0|>[gasps] You came back! <|speaker:1|>[laughs] I said I would.'
+        - type: audio
+          source:
+            type: url
+            url: https://example.com/speaker-0.mp3
+        - type: audio
+          source:
+            type: url
+            url: https://example.com/speaker-1.mp3
+      parameters:
+        drama_value: 0.8

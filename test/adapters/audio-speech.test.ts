@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
   createGenerationClient,
@@ -299,7 +301,7 @@ describe("openai.audioSpeech adapter validation", () => {
 });
 
 describe("openai.audioSpeech scene3 requests", () => {
-  it("sends a built-in voice request with the text exactly as given", async () => {
+  it("sends a built-in voice request with the text exactly as given and the default drama_value", async () => {
     const { client, calls } = recordingClient();
     const input = "  [sighs] We missed the last train again. [laughs] Well, at least the night is warm.\n";
 
@@ -307,7 +309,123 @@ describe("openai.audioSpeech scene3 requests", () => {
 
     expect(calls).toHaveLength(1);
     expect(calls[0]?.url).toBe("https://router.neta.art/v1/audio/speech");
-    expect(requestBody(calls[0])).toEqual({ model: "scene3", input });
+    expect(requestBody(calls[0])).toEqual({ model: "scene3", input, metadata: { drama_value: 0.5 } });
+  });
+
+  it("sends an explicit drama_value with the built-in voice", async () => {
+    const { client, calls } = recordingClient();
+
+    await client.generate({
+      model: "scene3",
+      content: [{ type: "text", text: "文本" }],
+      parameters: { drama_value: 0.2 },
+    });
+
+    expect(requestBody(calls[0])).toEqual({ model: "scene3", input: "文本", metadata: { drama_value: 0.2 } });
+  });
+
+  it.each([0, 0.8, 1])("sends an explicit drama_value of %s next to the references", async (dramaValue) => {
+    const { client, calls } = recordingClient();
+
+    await client.generate({
+      model: "scene3",
+      content: [{ type: "text", text: "使用参考音频的声音朗读这段文本。" }, audio()],
+      parameters: { drama_value: dramaValue },
+    });
+
+    expect(requestBody(calls[0])).toEqual({
+      model: "scene3",
+      input: "使用参考音频的声音朗读这段文本。",
+      metadata: { references: [{ url: REFERENCE_URL }], drama_value: dramaValue },
+    });
+  });
+
+  it.each([2, 16])("sends %i references in order, each with its own transcript when given", async (count) => {
+    const { client, calls } = recordingClient();
+    const urls = Array.from({ length: count }, (_, index) => `https://example.com/speaker-${index}.mp3`);
+    const input = urls.map((_, index) => `<|speaker:${index}|>第${index}句台词。`).join("");
+
+    await client.generate({
+      model: "scene3",
+      content: [
+        { type: "text", text: input },
+        ...urls.map((url, index) => (index % 2 === 0 ? audio(url, { text: `  第${index}段录音。\n` }) : audio(url))),
+      ],
+    });
+
+    expect(requestBody(calls[0])).toEqual({
+      model: "scene3",
+      input,
+      metadata: {
+        references: urls.map((url, index) => (index % 2 === 0 ? { url, text: `第${index}段录音。` } : { url })),
+        drama_value: 0.5,
+      },
+    });
+  });
+
+  it.each<{ name: string; parameters?: Record<string, unknown>; metadata: Record<string, unknown> }>([
+    {
+      name: "seed 0",
+      parameters: { seed: 0 },
+      metadata: { references: [{ url: REFERENCE_URL }], drama_value: 0.5, seed: 0 },
+    },
+    {
+      name: "seed 7",
+      parameters: { seed: 7 },
+      metadata: { references: [{ url: REFERENCE_URL }], drama_value: 0.5, seed: 7 },
+    },
+    {
+      name: "seed 2^53 - 1",
+      parameters: { seed: 9007199254740991 },
+      metadata: { references: [{ url: REFERENCE_URL }], drama_value: 0.5, seed: 9007199254740991 },
+    },
+    { name: "no seed", metadata: { references: [{ url: REFERENCE_URL }], drama_value: 0.5 } },
+  ])("sends seed in metadata only when it is given ($name)", async ({ parameters, metadata }) => {
+    const { client, calls } = recordingClient();
+
+    await client.generate({
+      model: "scene3",
+      content: [{ type: "text", text: "文本" }, audio()],
+      ...(parameters ? { parameters } : {}),
+    });
+
+    expect(requestBody(calls[0])).toEqual({ model: "scene3", input: "文本", metadata });
+  });
+
+  it.each<{ name: string; parameters?: Record<string, unknown>; instructions?: string }>([
+    {
+      name: "given",
+      parameters: { instructions: "Calm and warm, like a bedtime story." },
+      instructions: "Calm and warm, like a bedtime story.",
+    },
+    { name: "not given" },
+  ])("sends instructions at the top level only when they are $name", async ({ parameters, instructions }) => {
+    const { client, calls } = recordingClient();
+
+    await client.generate({
+      model: "scene3",
+      content: [{ type: "text", text: "文本" }],
+      ...(parameters ? { parameters } : {}),
+    });
+
+    expect(requestBody(calls[0])).toEqual({
+      model: "scene3",
+      input: "文本",
+      metadata: { drama_value: 0.5 },
+      ...(instructions === undefined ? {} : { instructions }),
+    });
+  });
+
+  it.each([
+    { name: "300 characters", instructions: "字".repeat(300) },
+    { name: "300 characters outside the BMP", instructions: "😀".repeat(300) },
+    { name: "300 characters besides [ ] < > | and surrounding spaces", instructions: ` [${"字".repeat(300)}] <|> \n` },
+  ])("accepts instructions of $name and sends them as given", async ({ instructions }) => {
+    const { client, calls } = recordingClient();
+
+    await client.generate({ model: "scene3", content: [{ type: "text", text: "文本" }], parameters: { instructions } });
+
+    expect(requestBody(calls[0])?.instructions).toBe(instructions);
   });
 
   it("sends one clone reference as a trimmed URL without a transcript", async () => {
@@ -321,7 +439,7 @@ describe("openai.audioSpeech scene3 requests", () => {
     expect(requestBody(calls[0])).toEqual({
       model: "scene3",
       input: "使用参考音频的声音朗读这段文本。",
-      metadata: { references: [{ url: REFERENCE_URL }] },
+      metadata: { references: [{ url: REFERENCE_URL }], drama_value: 0.5 },
     });
   });
 
@@ -339,7 +457,27 @@ describe("openai.audioSpeech scene3 requests", () => {
     expect(requestBody(calls[0])).toEqual({
       model: "scene3",
       input: "使用参考音频的声音朗读这段文本。",
-      metadata: { references: [{ url: REFERENCE_URL, text: "参考音频里实际说的话。" }] },
+      metadata: { references: [{ url: REFERENCE_URL, text: "参考音频里实际说的话。" }], drama_value: 0.5 },
+    });
+  });
+
+  // The cohub CLI writes `--audio reference_audio=<url>` as an audio block with meta.role "reference_audio".
+  it.each<{ name: string; meta: Record<string, unknown>; reference: Record<string, unknown> }>([
+    { name: "alone", meta: { role: "reference_audio" }, reference: { url: REFERENCE_URL } },
+    {
+      name: "next to meta.text",
+      meta: { role: "reference_audio", text: "参考音频里实际说的话。" },
+      reference: { url: REFERENCE_URL, text: "参考音频里实际说的话。" },
+    },
+  ])("takes meta.role reference_audio $name and does not send it", async ({ meta, reference }) => {
+    const { client, calls } = recordingClient();
+
+    await client.generate({ model: "scene3", content: [{ type: "text", text: "文本" }, audio(REFERENCE_URL, meta)] });
+
+    expect(requestBody(calls[0])).toEqual({
+      model: "scene3",
+      input: "文本",
+      metadata: { references: [reference], drama_value: 0.5 },
     });
   });
 });
@@ -348,6 +486,123 @@ describe("openai.audioSpeech scene3 validation", () => {
   function scene3Request(content: GenerationContentBlock[], overrides: Partial<GenerateRequest> = {}): GenerateRequest {
     return { model: "scene3", content, ...overrides };
   }
+
+  function speakerReferences(count: number): GenerationContentBlock[] {
+    return Array.from({ length: count }, (_, index) => audio(`https://example.com/speaker-${index}.mp3`));
+  }
+
+  // The wording drama3-launch agreed for drama_value (ticket 02a); the declaration and the README carry it as is.
+  const DRAMA_VALUE_DESCRIPTION =
+    "How lively the delivery is, from 0 to 1 (default 0.5, the recommended setting). Higher values give more varied intonation and fewer pauses; lower values are steadier. The effect is subtle: for a clear change of tone, use `instructions` or direction cues in the text. With the same `seed`, `drama_value` and input, the audio is the same.";
+
+  async function readmeScene3Section(): Promise<string> {
+    const readme = await readFile(join(process.cwd(), "README.md"), "utf8");
+    return readme.slice(readme.indexOf("`scene3` takes"), readme.indexOf("## Video generation"));
+  }
+
+  // What the text input and the reference recordings must tell a caller (drama3-launch, after the parameter table).
+  const TEXT_FACTS = [
+    "about 80 languages",
+    "<whisper>…</whisper>",
+    "<slow>…</slow>",
+    "<emphasis>…</emphasis>",
+    "Direction: … Line: …",
+    "free natural language",
+    "only examples",
+    "are hints and are not spoken",
+    "round parentheses",
+    "spoken as written",
+    "square brackets",
+    "about 21.5 per second of audio",
+  ];
+  const REFERENCE_FACTS = [
+    "1 to 20 s",
+    "under 1 s is rejected",
+    "over 20 s is cut at a quiet point",
+    "only the part before the cut is kept",
+  ];
+
+  it("declares drama_value from 0 to 1 with 0.5 as default, and up to 16 references", () => {
+    const declaration = getBuiltinGenerationModel("scene3");
+
+    expect(declaration?.parameters?.drama_value).toMatchObject({ type: "number", min: 0, max: 1, default: 0.5 });
+    expect(declaration?.content.input.find((spec) => spec.type === "audio")?.max).toBe(16);
+  });
+
+  it("describes drama_value in the agreed words", () => {
+    expect(getBuiltinGenerationModel("scene3")?.parameters?.drama_value?.description).toBe(DRAMA_VALUE_DESCRIPTION);
+  });
+
+  it("names the inputs it does not take and the controls the text can carry", () => {
+    const declaration = getBuiltinGenerationModel("scene3");
+    const text = declaration?.content.input.find((spec) => spec.type === "text")?.description ?? "";
+
+    expect(declaration?.description).toContain(
+      "Not supported: speed, response_format, voice, voice_prompt, stream, or a separate language parameter (write the language in the text, e.g. [language: ja]).",
+    );
+    for (const control of [
+      "[sighs]",
+      "<whisper>…</whisper>",
+      "[style] prefix",
+      "<|speaker:N|>",
+      "[language: xx]",
+      "[audio tokens: N]",
+    ]) {
+      expect(text, control).toContain(control);
+    }
+  });
+
+  it("tells what the text can carry and which reference recordings work", () => {
+    const declaration = getBuiltinGenerationModel("scene3");
+    const text = declaration?.content.input.find((spec) => spec.type === "text")?.description ?? "";
+    const references = declaration?.content.input.find((spec) => spec.type === "audio")?.description ?? "";
+
+    for (const fact of TEXT_FACTS) expect(text, fact).toContain(fact);
+    for (const fact of REFERENCE_FACTS) expect(references, fact).toContain(fact);
+  });
+
+  it("keeps the backend model and its sampling out of the declaration", () => {
+    // drama_value is the one public name that may carry the word, so it is taken out before the check.
+    const published = JSON.stringify(getBuiltinGenerationModel("scene3")).replaceAll("drama_value", "");
+
+    expect(published).not.toMatch(/drama|fish|sampl|temperature|top[-_ ]?k/i);
+  });
+
+  it("documents every scene3 input and parameter in the README, each with an example", async () => {
+    const section = await readmeScene3Section();
+
+    expect(section).toContain(DRAMA_VALUE_DESCRIPTION);
+    expect(section).toContain("up to 16");
+    expect(section).toContain(
+      "Not supported: `speed`, `response_format`, `voice`, `voice_prompt`, `stream`, or a separate `language` parameter",
+    );
+    for (const control of ["[sighs]", "<whisper>", "[style]", "<|speaker:N|>", "[language: xx]", "[audio tokens: N]"]) {
+      expect(section, control).toContain(control);
+    }
+    for (const example of ["meta: { text:", "drama_value: 0.8", "seed: 42", 'instructions: "']) {
+      expect(section, example).toContain(example);
+    }
+    for (const fact of [...TEXT_FACTS, ...REFERENCE_FACTS]) expect(section, fact).toContain(fact);
+  });
+
+  it("keeps the backend model and its sampling out of the README section", async () => {
+    const section = (await readmeScene3Section()).replaceAll("drama_value", "");
+
+    expect(section.length).toBeGreaterThan(0);
+    expect(section).not.toMatch(/drama|fish|sampl|temperature|top[-_ ]?k/i);
+  });
+
+  it.each<{ name: string; value: unknown }>([
+    { name: "drama_value", value: 0.5 },
+    { name: "seed", value: 7 },
+    { name: "instructions", value: "Calm and warm." },
+  ])("keeps $name to scene3: the Qwen model rejects it as an unknown parameter", ({ name, value }) => {
+    const client = createGenerationClient({ apiKey: "key" });
+
+    expect(() => client.validate(qwenDesignRequest({ parameters: { [name]: value } }))).toThrow(
+      `Unknown parameter: ${name}`,
+    );
+  });
 
   it.each<{ name: string; request: GenerateRequest; message: string }>([
     { name: "zero text blocks", request: scene3Request([]), message: "Missing required text content block" },
@@ -365,9 +620,59 @@ describe("openai.audioSpeech scene3 validation", () => {
       message: "scene3 requires exactly one non-empty text content block as input",
     },
     {
-      name: "two audio blocks",
-      request: scene3Request([{ type: "text", text: "文本" }, audio(), audio(SECOND_REFERENCE_URL)]),
-      message: "Expected at most 1 audio content block(s)",
+      name: "seventeen audio blocks",
+      request: scene3Request([{ type: "text", text: "文本" }, ...speakerReferences(17)]),
+      message: "Expected at most 16 audio content block(s)",
+    },
+    {
+      name: "drama_value below 0",
+      request: scene3Request([{ type: "text", text: "文本" }], { parameters: { drama_value: -0.1 } }),
+      message: "Parameter drama_value must be >= 0",
+    },
+    {
+      name: "drama_value above 1",
+      request: scene3Request([{ type: "text", text: "文本" }], { parameters: { drama_value: 1.1 } }),
+      message: "Parameter drama_value must be <= 1",
+    },
+    {
+      name: "string drama_value",
+      request: scene3Request([{ type: "text", text: "文本" }], { parameters: { drama_value: "high" } }),
+      message: "Parameter drama_value must be a number",
+    },
+    {
+      name: "null drama_value",
+      request: scene3Request([{ type: "text", text: "文本" }], { parameters: { drama_value: null } }),
+      message: "Parameter drama_value must be a number",
+    },
+    {
+      name: "NaN drama_value",
+      request: scene3Request([{ type: "text", text: "文本" }], { parameters: { drama_value: Number.NaN } }),
+      message: "Parameter drama_value must be a number",
+    },
+    {
+      name: "negative seed",
+      request: scene3Request([{ type: "text", text: "文本" }], { parameters: { seed: -1 } }),
+      message: "Parameter seed must be >= 0",
+    },
+    {
+      name: "fractional seed",
+      request: scene3Request([{ type: "text", text: "文本" }], { parameters: { seed: 1.5 } }),
+      message: "Parameter seed must be an integer",
+    },
+    {
+      name: "seed above 2^53 - 1",
+      request: scene3Request([{ type: "text", text: "文本" }], { parameters: { seed: 9007199254740992 } }),
+      message: "Parameter seed must be <= 9007199254740991",
+    },
+    {
+      name: "301-character instructions",
+      request: scene3Request([{ type: "text", text: "文本" }], { parameters: { instructions: "字".repeat(301) } }),
+      message: "Parameter instructions must be at most 300 characters",
+    },
+    {
+      name: "numeric instructions",
+      request: scene3Request([{ type: "text", text: "文本" }], { parameters: { instructions: 5 } }),
+      message: "Parameter instructions must be a string",
     },
     {
       name: "base64 audio source",
@@ -393,6 +698,11 @@ describe("openai.audioSpeech scene3 validation", () => {
       message: "Unknown audio content meta field: weight",
     },
     {
+      name: "audio meta.role other than reference_audio",
+      request: scene3Request([{ type: "text", text: "文本" }, audio(REFERENCE_URL, { role: "first_frame" })]),
+      message: "audio role is not supported by scene3: first_frame",
+    },
+    {
       name: "empty audio meta.text",
       request: scene3Request([{ type: "text", text: "文本" }, audio(REFERENCE_URL, { text: "" })]),
       message: "audio content block 0 meta.text must be a non-empty string",
@@ -416,12 +726,12 @@ describe("openai.audioSpeech scene3 validation", () => {
     if (!declaration) throw new Error("scene3 declaration is unavailable");
     const audioSpec = declaration.content.input.find((spec) => spec.type === "audio");
     if (!audioSpec) throw new Error("scene3 audio spec is unavailable");
-    audioSpec.max = 2;
+    audioSpec.max = 17;
     const client = createGenerationClient({ models: [declaration], includeBuiltinModels: false, apiKey: "key" });
 
-    expect(() =>
-      client.validate(scene3Request([{ type: "text", text: "文本" }, audio(), audio(SECOND_REFERENCE_URL)])),
-    ).toThrow("scene3 supports at most one reference audio");
+    expect(() => client.validate(scene3Request([{ type: "text", text: "文本" }, ...speakerReferences(17)]))).toThrow(
+      "scene3 supports at most 16 reference audios",
+    );
   });
 });
 
