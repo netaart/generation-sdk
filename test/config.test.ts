@@ -30,6 +30,20 @@ describe("config", () => {
     expect(declaration.category).toBe("image");
   });
 
+  it("declares the provider duration range for each Seedance generation", async () => {
+    const client = createGenerationClient({ apiKey: "test" });
+    expect(client.getModel("seedance-2-5")?.parameters?.duration).toMatchObject({ min: 4, max: 30 });
+    expect(client.getModel("seedance-2-0")?.parameters?.duration).toMatchObject({ min: 4, max: 15 });
+    expect(client.getModel("seedance-2-0-fast")?.parameters?.duration).toMatchObject({ min: 4, max: 15 });
+
+    const shipped = await readGenerationModelDeclarationsFromDirectory(join(process.cwd(), "models"));
+    for (const model of ["seedance-2-5", "seedance-2-0", "seedance-2-0-fast"]) {
+      expect(shipped.find((declaration) => declaration.model === model)?.parameters?.duration).toEqual(
+        client.getModel(model)?.parameters?.duration,
+      );
+    }
+  });
+
   it("assigns catalog categories for published product models", async () => {
     const client = createGenerationClient({ apiKey: "test" });
     const expected = {

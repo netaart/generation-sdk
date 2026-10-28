@@ -113,14 +113,19 @@ const noobxlImageToImageParameters = {
   },
 } satisfies GenerationModelDeclaration["parameters"];
 
-function seedanceVideoParameters(defaults: { resolution: string; resolutions?: string[]; maxWait: number }) {
+function seedanceVideoParameters(defaults: {
+  resolution: string;
+  resolutions?: string[];
+  maxWait: number;
+  maxDuration?: number;
+}) {
   return {
     duration: {
       type: "integer",
       optional: true,
       default: 5,
       min: 4,
-      max: 15,
+      max: defaults.maxDuration ?? 15,
       description: "Video duration in seconds.",
     },
     resolution: {
@@ -2131,6 +2136,7 @@ const builtinModels = [
     parameters: seedanceVideoParameters({
       resolution: "1080p",
       resolutions: ["480p", "720p", "1080p"],
+      maxDuration: 30,
       maxWait: 900,
     }),
     examples: [
