@@ -132,6 +132,83 @@ describe("ark.videoGenerations adapter", () => {
     expect(metadata.watermark).toBeUndefined();
   });
 
+  it("reads completion tokens from the task body top level", async () => {
+    vi.useFakeTimers();
+    const fetchMock = async (url: string | URL | Request) => {
+      if (String(url).endsWith("/v1/video/generations")) {
+        return new Response(JSON.stringify({ task_id: "task-1" }), { status: 200 });
+      }
+      return new Response(
+        JSON.stringify({
+          data: {
+            status: "SUCCESS",
+            result_url: "https://example.com/out.mp4",
+            data: {
+              status: "succeeded",
+              model: "video-pro-fast",
+              duration: 4,
+              resolution: "720p",
+              completion_tokens: 87300,
+              actual_cost_usd: 0.48888,
+            },
+          },
+        }),
+        { status: 200 },
+      );
+    };
+
+    const client = createGenerationClient({ apiKey: "key", fetch: fetchMock as typeof fetch });
+    const promise = client.generate({
+      model: "seedance-2-0-fast",
+      content: [{ type: "text", text: "hello" }],
+      parameters: { duration: 4, poll_interval: 1, max_wait: 30 },
+    });
+    await vi.advanceTimersByTimeAsync(1000);
+    const output = await promise;
+    vi.useRealTimers();
+
+    expect(output[0]?.meta).toEqual({
+      task_id: "task-1",
+      status: "succeeded",
+      model: "video-pro-fast",
+      duration: 4,
+      resolution: "720p",
+      usage: { completion_tokens: 87300, total_tokens: 87300 },
+    });
+  });
+
+  it("keeps the nested usage block when the task body has one", async () => {
+    vi.useFakeTimers();
+    const nestedUsage = { completion_tokens: 260100, total_tokens: 260100 };
+    const fetchMock = async (url: string | URL | Request) => {
+      if (String(url).endsWith("/v1/video/generations")) {
+        return new Response(JSON.stringify({ task_id: "task-1" }), { status: 200 });
+      }
+      return new Response(
+        JSON.stringify({
+          data: {
+            status: "SUCCESS",
+            result_url: "https://example.com/out.mp4",
+            data: { status: "succeeded", usage: nestedUsage, completion_tokens: 1 },
+          },
+        }),
+        { status: 200 },
+      );
+    };
+
+    const client = createGenerationClient({ apiKey: "key", fetch: fetchMock as typeof fetch });
+    const promise = client.generate({
+      model: "seedance-2-0",
+      content: [{ type: "text", text: "hello" }],
+      parameters: { duration: 12, poll_interval: 1, max_wait: 30 },
+    });
+    await vi.advanceTimersByTimeAsync(1000);
+    const output = await promise;
+    vi.useRealTimers();
+
+    expect((output[0]?.meta as Record<string, unknown>).usage).toEqual(nestedUsage);
+  });
+
   it("defaults duration to 5 when omitted", async () => {
     const { calls } = await runSuccessfulVideoGeneration([textBlock("a slow push in")]);
     expect(parseCreateBody(calls).duration).toBe(5);

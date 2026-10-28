@@ -18,19 +18,23 @@ type ArkTaskStatusResponse = {
     result_url?: unknown;
     progress?: unknown;
     first_frame?: unknown;
-    data?: {
-      status?: unknown;
-      content?: { video_url?: unknown; first_frame?: unknown };
-      resolution?: unknown;
-      ratio?: unknown;
-      duration?: unknown;
-      framespersecond?: unknown;
-      seed?: unknown;
-      generate_audio?: unknown;
-      model?: unknown;
-      usage?: unknown;
-    };
+    data?: ArkTaskData;
   };
+};
+
+type ArkTaskData = {
+  status?: unknown;
+  content?: { video_url?: unknown; first_frame?: unknown };
+  resolution?: unknown;
+  ratio?: unknown;
+  duration?: unknown;
+  framespersecond?: unknown;
+  seed?: unknown;
+  generate_audio?: unknown;
+  model?: unknown;
+  usage?: unknown;
+  completion_tokens?: unknown;
+  total_tokens?: unknown;
 };
 
 type MediaMode = "image" | "frame" | "reference";
@@ -252,6 +256,17 @@ function extractTaskId(response: ArkCreateTaskResponse): string {
   return taskId;
 }
 
+function normalizeTaskUsage(native: ArkTaskData | undefined): Record<string, unknown> | undefined {
+  if (!native) return undefined;
+  if (native.usage !== null && typeof native.usage === "object") return native.usage as Record<string, unknown>;
+  const completionTokens = asNumber(native.completion_tokens);
+  if (completionTokens === undefined) return undefined;
+  return {
+    completion_tokens: completionTokens,
+    total_tokens: asNumber(native.total_tokens) ?? completionTokens,
+  };
+}
+
 function normalizeTaskStatus(response: ArkTaskStatusResponse) {
   if (response.data) {
     const wrapper = response.data;
@@ -268,7 +283,7 @@ function normalizeTaskStatus(response: ArkTaskStatusResponse) {
       seed: native?.seed,
       generate_audio: native?.generate_audio,
       model: native?.model,
-      usage: native?.usage,
+      usage: normalizeTaskUsage(native),
     };
     for (const key of Object.keys(metadata)) if (metadata[key] === undefined) delete metadata[key];
     return { status, videoUrl, firstFrameUrl, metadata };
