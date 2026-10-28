@@ -117,19 +117,14 @@ describe("openai.audioSpeech adapter requests", () => {
     });
   });
 
-  it("silently ignores deprecated preview_text without sending it", async () => {
-    const { client, calls } = recordingClient();
-    await client.generate(
-      qwenDesignRequest({
-        meta: { voice_prompt: "清晰女声", preview_text: "旧字段不应发送" },
-      }),
-    );
+  it("rejects the retired preview_text as an unknown request.meta field before fetch", async () => {
+    const fetchMock = vi.fn(async () => routerSuccess());
+    const client = createGenerationClient({ apiKey: "key", fetch: fetchMock as typeof fetch });
 
-    expect(requestBody(calls[0])).toEqual({
-      model: "qwen-audio-3.1-tts-flash",
-      input: QWEN_TEXT,
-      metadata: { voice_prompt: "清晰女声" },
-    });
+    await expect(
+      client.generate(qwenDesignRequest({ meta: { voice_prompt: "清晰女声", preview_text: "旧字段不应发送" } })),
+    ).rejects.toThrow("Unknown request.meta field: preview_text");
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("rejects a higgs-tts request before fetch", async () => {
@@ -168,15 +163,20 @@ describe("openai.audioSpeech adapter validation", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("accepts retired preview_text without treating it as a Qwen voice source", () => {
+  it("rejects the retired preview_text in request.meta and request.metadata, with or without a voice source", () => {
     const client = createGenerationClient({ apiKey: "key" });
+    const content: GenerationContentBlock[] = [{ type: "text", text: QWEN_TEXT }];
+
+    expect(() =>
+      client.validate({ model: "qwen-audio-3.1-tts-flash", content, meta: { preview_text: "已经失效的文本来源" } }),
+    ).toThrow("Unknown request.meta field: preview_text");
     expect(() =>
       client.validate({
         model: "qwen-audio-3.1-tts-flash",
-        content: [{ type: "text", text: QWEN_TEXT }],
-        meta: { preview_text: "已经失效的文本来源" },
+        content,
+        metadata: { voice_prompt: "清晰女声", preview_text: "已经失效的文本来源" },
       }),
-    ).toThrow("requires one reference audio or meta.voice_prompt");
+    ).toThrow("Unknown request.metadata field: preview_text");
   });
 
   it.each([
@@ -300,6 +300,170 @@ describe("openai.audioSpeech adapter validation", () => {
         ],
       }),
     ).toThrow("audio source is not supported by qwen-audio-3.1-tts-flash: base64");
+  });
+});
+
+describe("openai.audioSpeech Qwen instructions and seed", () => {
+  it("sends parameters.instructions as the top-level instructions, trimmed, on a designed voice", async () => {
+    const { client, calls } = recordingClient();
+
+    await client.generate(qwenDesignRequest({ parameters: { instructions: "  用非常缓慢、低沉的语气说\n" } }));
+
+    expect(requestBody(calls[0])).toEqual({
+      model: "qwen-audio-3.1-tts-flash",
+      input: QWEN_TEXT,
+      instructions: "用非常缓慢、低沉的语气说",
+      metadata: { voice_prompt: "沉稳清晰的男性播音员声音" },
+    });
+  });
+
+  it.each<{ name: string; parameters?: Record<string, unknown> }>([
+    { name: "absent" },
+    { name: "an empty parameters object", parameters: {} },
+    { name: "an empty string", parameters: { instructions: "" } },
+    { name: "only whitespace", parameters: { instructions: " \n\t " } },
+  ])("sends no instructions key when instructions is $name", async ({ parameters }) => {
+    const { client, calls } = recordingClient();
+
+    await client.generate(qwenDesignRequest(parameters ? { parameters } : {}));
+
+    expect(requestBody(calls[0])).toEqual({
+      model: "qwen-audio-3.1-tts-flash",
+      input: QWEN_TEXT,
+      metadata: { voice_prompt: "沉稳清晰的男性播音员声音" },
+    });
+  });
+
+  it("sends parameters.instructions as the top-level instructions on a cloned voice", async () => {
+    const { client, calls } = recordingClient();
+
+    await client.generate({
+      model: "qwen-audio-3.1-tts-flash",
+      content: [{ type: "text", text: QWEN_TEXT }, audio(`  ${REFERENCE_URL}\n`)],
+      parameters: { instructions: "请用非常缓慢的语速说话。" },
+    });
+
+    expect(requestBody(calls[0])).toEqual({
+      model: "qwen-audio-3.1-tts-flash",
+      input: QWEN_TEXT,
+      ref_audio: REFERENCE_URL,
+      instructions: "请用非常缓慢的语速说话。",
+    });
+  });
+
+  it("sends parameters.seed as metadata.seed next to metadata.voice_prompt on a designed voice", async () => {
+    const { client, calls } = recordingClient();
+
+    await client.generate(qwenDesignRequest({ parameters: { seed: 42 } }));
+
+    expect(requestBody(calls[0])).toEqual({
+      model: "qwen-audio-3.1-tts-flash",
+      input: QWEN_TEXT,
+      metadata: { voice_prompt: "沉稳清晰的男性播音员声音", seed: 42 },
+    });
+  });
+
+  it("sends seed 0 as metadata.seed and sends metadata.seed alone on a cloned voice", async () => {
+    const { client, calls } = recordingClient();
+
+    await client.generate({
+      model: "qwen-audio-3.1-tts-flash",
+      content: [{ type: "text", text: QWEN_TEXT }, audio()],
+      parameters: { seed: 0 },
+    });
+
+    expect(requestBody(calls[0])).toEqual({
+      model: "qwen-audio-3.1-tts-flash",
+      input: QWEN_TEXT,
+      ref_audio: REFERENCE_URL,
+      metadata: { seed: 0 },
+    });
+  });
+
+  it("takes audio meta.role reference_audio on a Qwen clone and does not send it", async () => {
+    const { client, calls } = recordingClient();
+
+    await client.generate({
+      model: "qwen-audio-3.1-tts-flash",
+      content: [{ type: "text", text: QWEN_TEXT }, audio(REFERENCE_URL, { role: "reference_audio" })],
+    });
+
+    expect(requestBody(calls[0])).toEqual({
+      model: "qwen-audio-3.1-tts-flash",
+      input: QWEN_TEXT,
+      ref_audio: REFERENCE_URL,
+    });
+  });
+
+  it.each(["first_frame", "", 7])("rejects Qwen audio meta.role %j before fetch", async (role) => {
+    const fetchMock = vi.fn(async () => routerSuccess());
+    const client = createGenerationClient({ apiKey: "key", fetch: fetchMock as typeof fetch });
+
+    await expect(
+      client.generate({
+        model: "qwen-audio-3.1-tts-flash",
+        content: [{ type: "text", text: QWEN_TEXT }, audio(REFERENCE_URL, { role })],
+      }),
+    ).rejects.toThrow(`audio role is not supported by qwen-audio-3.1-tts-flash: ${String(role)}`);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("still rejects other Qwen audio meta fields", () => {
+    const client = createGenerationClient({ apiKey: "key" });
+
+    expect(() =>
+      client.validate({
+        model: "qwen-audio-3.1-tts-flash",
+        content: [{ type: "text", text: QWEN_TEXT }, audio(REFERENCE_URL, { role: "reference_audio", text: "转写" })],
+      }),
+    ).toThrow("Unknown audio content meta field: text");
+  });
+
+  it("declares an example that uses parameters.instructions, and it passes validation", () => {
+    const client = createGenerationClient({ apiKey: "key" });
+    const example = getBuiltinGenerationModel("qwen-audio-3.1-tts-flash")?.examples?.find(
+      (candidate) => candidate.request.parameters?.instructions !== undefined,
+    );
+
+    expect(example?.request.parameters).toEqual({ instructions: "语速放慢，声音压低，带一点疲惫" });
+    expect(() => client.validate(example?.request as GenerateRequest)).not.toThrow();
+  });
+
+  it("sends the design body with instructions and seed together", async () => {
+    const { client, calls } = recordingClient();
+
+    await client.generate(qwenDesignRequest({ parameters: { instructions: "低声耳语", seed: 65535 } }));
+
+    expect(requestBody(calls[0])).toEqual({
+      model: "qwen-audio-3.1-tts-flash",
+      input: QWEN_TEXT,
+      instructions: "低声耳语",
+      metadata: { voice_prompt: "沉稳清晰的男性播音员声音", seed: 65535 },
+    });
+  });
+
+  it.each([-1, 65536, 1.5])("rejects seed %s through the declaration before fetch", async (seed) => {
+    const fetchMock = vi.fn(async () => routerSuccess());
+    const client = createGenerationClient({ apiKey: "key", fetch: fetchMock as typeof fetch });
+
+    await expect(client.generate(qwenDesignRequest({ parameters: { seed } }))).rejects.toBeInstanceOf(
+      GenerationValidationError,
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("declares instructions and seed as optional parameters, with the agreed wording", () => {
+    const parameters = getBuiltinGenerationModel("qwen-audio-3.1-tts-flash")?.parameters;
+
+    expect(parameters).toEqual({
+      instructions: {
+        type: "string",
+        optional: true,
+        description:
+          "Natural-language direction for how the whole text is spoken: tone, emotion, pace, dialect or role. Works with a designed and a cloned voice.",
+      },
+      seed: { type: "integer", optional: true, min: 0, max: 65535, description: "Random seed, passed to the model." },
+    });
   });
 });
 
@@ -597,8 +761,6 @@ describe("openai.audioSpeech scene3 validation", () => {
 
   it.each<{ name: string; value: unknown }>([
     { name: "drama_value", value: 0.5 },
-    { name: "seed", value: 7 },
-    { name: "instructions", value: "Calm and warm." },
   ])("keeps $name to scene3: the Qwen model rejects it as an unknown parameter", ({ name, value }) => {
     const client = createGenerationClient({ apiKey: "key" });
 

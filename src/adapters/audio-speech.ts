@@ -12,7 +12,8 @@ const QWEN_MODEL = "qwen-audio-3.1-tts-flash";
 const SCENE3_MODEL = "scene3";
 const SCENE3_MAX_REFERENCES = 16;
 const SCENE3_MAX_INSTRUCTIONS = 300;
-const SCENE3_REFERENCE_ROLE = "reference_audio";
+// The cohub CLI marks reference recordings with this role; it says nothing either model needs, so it is not sent.
+const REFERENCE_AUDIO_ROLE = "reference_audio";
 
 type TextBlock = Extract<GenerationContentBlock, { type: "text" }>;
 type AudioBlock = Extract<GenerationContentBlock, { type: "audio" }>;
@@ -69,16 +70,25 @@ function validateCommonContent(input: ResolvedGenerationRequest): { text: TextBl
   return { text: texts[0], audio };
 }
 
+function validateAudioRole(model: string, block: AudioBlock): void {
+  const role = block.meta?.role;
+  if (role !== undefined && role !== REFERENCE_AUDIO_ROLE) {
+    throw new GenerationValidationError(`audio role is not supported by ${model}: ${String(role)}`);
+  }
+}
+
 function validateQwen(input: ResolvedGenerationRequest, text: TextBlock, audio: AudioBlock[]): void {
   if (audio.length > 1) {
     throw new GenerationValidationError(`${input.declaration.model} supports at most one reference audio`);
   }
-  // Keep accepting the retired preview_text key for compatibility, but never use or forward it.
-  const requestMetaKeys = new Set(["voice_prompt", "preview_text"]);
+  const requestMetaKeys = new Set(["voice_prompt"]);
   validateMetaKeys("request.metadata", input.request.metadata, requestMetaKeys);
   validateMetaKeys("request.meta", input.request.meta, requestMetaKeys);
   validateMetaKeys("text content meta", text.meta, new Set());
-  for (const block of audio) validateMetaKeys("audio content meta", block.meta, new Set());
+  for (const block of audio) {
+    validateMetaKeys("audio content meta", block.meta, new Set(["role"]));
+    validateAudioRole(input.declaration.model, block);
+  }
 
   const voicePrompt = input.meta.voice_prompt;
   const hasVoicePrompt = typeof voicePrompt === "string" && voicePrompt.trim().length > 0;
@@ -110,11 +120,7 @@ function validateScene3(input: ResolvedGenerationRequest, text: TextBlock, audio
   validateMetaKeys("text content meta", text.meta, new Set());
   for (const [index, block] of audio.entries()) {
     validateMetaKeys("audio content meta", block.meta, new Set(["text", "role"]));
-    // The cohub CLI marks reference recordings with this role; it says nothing scene3 needs, so it is not sent.
-    const role = block.meta?.role;
-    if (role !== undefined && role !== SCENE3_REFERENCE_ROLE) {
-      throw new GenerationValidationError(`audio role is not supported by ${input.declaration.model}: ${String(role)}`);
-    }
+    validateAudioRole(input.declaration.model, block);
     const transcript = block.meta?.text;
     if (transcript !== undefined && (typeof transcript !== "string" || !transcript.trim())) {
       throw new GenerationValidationError(`audio content block ${index} meta.text must be a non-empty string`);
@@ -183,7 +189,12 @@ function buildPayload(input: ResolvedGenerationRequest): Record<string, unknown>
   };
 
   if (audio[0]?.source.type === "url") payload.ref_audio = audio[0].source.url.trim();
-  else payload.metadata = { voice_prompt: input.meta.voice_prompt };
+  const metadata: Record<string, unknown> = {};
+  if (audio[0]?.source.type !== "url") metadata.voice_prompt = input.meta.voice_prompt;
+  if (input.parameters.seed !== undefined) metadata.seed = input.parameters.seed;
+  if (Object.keys(metadata).length > 0) payload.metadata = metadata;
+  const instructions = input.parameters.instructions;
+  if (typeof instructions === "string" && instructions.trim()) payload.instructions = instructions.trim();
   return payload;
 }
 

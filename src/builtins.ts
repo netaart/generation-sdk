@@ -714,7 +714,7 @@ const audioSpeechModels = [
     model: "qwen-audio-3.1-tts-flash",
     title: "Qwen Audio 3.1 TTS Flash",
     description:
-      "Modes: voice_prompt design OR one-reference clone. Text: >=15 Unicode code points. Conflict: ask user; never combine/reinterpret. Dependency: clone prior generated audio.",
+      "Modes: voice_prompt design OR one-reference clone, each with the optional instructions parameter for how the whole text is spoken. Text: >=15 Unicode code points. Not supported: speed, response_format, voice, stream, or a separate language parameter. Conflict: ask user; never combine/reinterpret. Dependency: clone prior generated audio.",
     adapter: { type: "openai.audioSpeech" },
     content: {
       input: [
@@ -743,6 +743,21 @@ const audioSpeechModels = [
         },
       },
     },
+    parameters: {
+      instructions: {
+        type: "string",
+        optional: true,
+        description:
+          "Natural-language direction for how the whole text is spoken: tone, emotion, pace, dialect or role. Works with a designed and a cloned voice.",
+      },
+      seed: {
+        type: "integer",
+        optional: true,
+        min: 0,
+        max: 65535,
+        description: "Random seed, passed to the model.",
+      },
+    },
     examples: [
       {
         title: "Voice design",
@@ -760,6 +775,15 @@ const audioSpeechModels = [
             { type: "text", text: "这是一段长度足够并且表达清晰自然的语音合成测试文本。" },
             { type: "audio", source: { type: "url", url: "https://example.com/reference.mp3" } },
           ],
+        },
+      },
+      {
+        title: "Voice design with instructions",
+        request: {
+          model: "qwen-audio-3.1-tts-flash",
+          content: [{ type: "text", text: "这是一段长度足够并且表达清晰自然的语音合成测试文本。" }],
+          meta: { voice_prompt: "一位沉稳干练的男性播音员声音，吐字清晰有力" },
+          parameters: { instructions: "语速放慢，声音压低，带一点疲惫" },
         },
       },
     ],

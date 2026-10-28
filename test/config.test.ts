@@ -298,13 +298,17 @@ describe("config", () => {
         "Dependency: use prior generated audio",
       );
       expect(declaration?.meta?.fields?.voice_prompt?.description).toContain("no reference audio");
-      expect(declaration?.examples?.map((example) => example.title)).toEqual(["Voice design", "Voice clone"]);
+      expect(declaration?.examples?.map((example) => example.title)).toEqual([
+        "Voice design",
+        "Voice clone",
+        "Voice design with instructions",
+      ]);
       expect(JSON.parse(client.stringifyModelConfig(model, { format: "json" }))).toEqual(declaration);
     }
 
     const flash = client.getModel("qwen-audio-3.1-tts-flash");
     expect(flash?.description).toBe(
-      "Modes: voice_prompt design OR one-reference clone. Text: >=15 Unicode code points. Conflict: ask user; never combine/reinterpret. Dependency: clone prior generated audio.",
+      "Modes: voice_prompt design OR one-reference clone, each with the optional instructions parameter for how the whole text is spoken. Text: >=15 Unicode code points. Not supported: speed, response_format, voice, stream, or a separate language parameter. Conflict: ask user; never combine/reinterpret. Dependency: clone prior generated audio.",
     );
     expect(flash?.content.input.find((input) => input.type === "text")?.description).toContain(
       "at least 15 Unicode code points",
