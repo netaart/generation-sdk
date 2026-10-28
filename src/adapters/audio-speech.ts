@@ -12,6 +12,7 @@ const QWEN_MODELS = new Set(["qwen-tts", "qwen-audio-3.0-tts-plus", "qwen-audio-
 const QWEN_AUDIO_3_MODELS = new Set(["qwen-audio-3.0-tts-plus", "qwen-audio-3.0-tts-flash"]);
 const SCENE3_MODEL = "scene3";
 const SCENE3_MAX_REFERENCES = 16;
+const SCENE3_MAX_INSTRUCTIONS = 300;
 
 type TextBlock = Extract<GenerationContentBlock, { type: "text" }>;
 type AudioBlock = Extract<GenerationContentBlock, { type: "audio" }>;
@@ -114,6 +115,15 @@ function validateScene3(input: ResolvedGenerationRequest, text: TextBlock, audio
       throw new GenerationValidationError(`audio content block ${index} meta.text must be a non-empty string`);
     }
   }
+  const instructions = input.parameters.instructions;
+  if (typeof instructions === "string" && scene3InstructionsLength(instructions) > SCENE3_MAX_INSTRUCTIONS) {
+    throw new GenerationValidationError(`Parameter instructions must be at most ${SCENE3_MAX_INSTRUCTIONS} characters`);
+  }
+}
+
+/** Counts like the gateway does: [ ] < > | are removed and the ends trimmed, then Unicode code points are counted. */
+function scene3InstructionsLength(instructions: string): number {
+  return Array.from(instructions.replace(/[[\]<>|]/g, "").trim()).length;
 }
 
 function validateAudioSpeechRequest(input: ResolvedGenerationRequest): void {
@@ -153,6 +163,7 @@ function buildScene3Payload(
 
   const payload: Record<string, unknown> = { model: SCENE3_MODEL, input: text.text };
   if (Object.keys(metadata).length > 0) payload.metadata = metadata;
+  if (input.parameters.instructions !== undefined) payload.instructions = input.parameters.instructions;
   return payload;
 }
 

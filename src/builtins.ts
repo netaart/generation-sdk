@@ -836,6 +836,11 @@ const audioSpeechModels = [
         min: 0,
         description: "Random seed for reproducibility.",
       },
+      instructions: {
+        type: "string",
+        optional: true,
+        description: "Director's note applied to every sentence. At most 300 characters; [ ] < > | are removed.",
+      },
     },
     examples: [
       {

@@ -381,6 +381,38 @@ describe("openai.audioSpeech scene3 requests", () => {
     expect(requestBody(calls[0])).toEqual({ model: "scene3", input: "文本", metadata });
   });
 
+  it.each<{ name: string; parameters?: Record<string, unknown>; instructions?: string }>([
+    {
+      name: "given",
+      parameters: { instructions: "Calm and warm, like a bedtime story." },
+      instructions: "Calm and warm, like a bedtime story.",
+    },
+    { name: "not given" },
+  ])("sends instructions at the top level only when they are $name", async ({ parameters, instructions }) => {
+    const { client, calls } = recordingClient();
+
+    await client.generate({ model: "scene3", content: [{ type: "text", text: "文本" }], parameters });
+
+    expect(requestBody(calls[0])).toEqual({
+      model: "scene3",
+      input: "文本",
+      metadata: { drama_value: 0.5 },
+      ...(instructions === undefined ? {} : { instructions }),
+    });
+  });
+
+  it.each([
+    { name: "300 characters", instructions: "字".repeat(300) },
+    { name: "300 characters outside the BMP", instructions: "😀".repeat(300) },
+    { name: "300 characters besides [ ] < > | and surrounding spaces", instructions: ` [${"字".repeat(300)}] <|> \n` },
+  ])("accepts instructions of $name and sends them as given", async ({ instructions }) => {
+    const { client, calls } = recordingClient();
+
+    await client.generate({ model: "scene3", content: [{ type: "text", text: "文本" }], parameters: { instructions } });
+
+    expect(requestBody(calls[0])?.instructions).toBe(instructions);
+  });
+
   it("sends one clone reference as a trimmed URL without a transcript", async () => {
     const { client, calls } = recordingClient();
 
@@ -431,11 +463,15 @@ describe("openai.audioSpeech scene3 validation", () => {
     expect(declaration?.content.input.find((spec) => spec.type === "audio")?.max).toBe(16);
   });
 
-  it("keeps drama_value to scene3: the Qwen model rejects it as an unknown parameter", () => {
+  it.each<{ name: string; value: unknown }>([
+    { name: "drama_value", value: 0.5 },
+    { name: "seed", value: 7 },
+    { name: "instructions", value: "Calm and warm." },
+  ])("keeps $name to scene3: the Qwen model rejects it as an unknown parameter", ({ name, value }) => {
     const client = createGenerationClient({ apiKey: "key" });
 
-    expect(() => client.validate(qwenDesignRequest({ parameters: { drama_value: 0.5 } }))).toThrow(
-      "Unknown parameter: drama_value",
+    expect(() => client.validate(qwenDesignRequest({ parameters: { [name]: value } }))).toThrow(
+      `Unknown parameter: ${name}`,
     );
   });
 
@@ -493,6 +529,16 @@ describe("openai.audioSpeech scene3 validation", () => {
       name: "fractional seed",
       request: scene3Request([{ type: "text", text: "文本" }], { parameters: { seed: 1.5 } }),
       message: "Parameter seed must be an integer",
+    },
+    {
+      name: "301-character instructions",
+      request: scene3Request([{ type: "text", text: "文本" }], { parameters: { instructions: "字".repeat(301) } }),
+      message: "Parameter instructions must be at most 300 characters",
+    },
+    {
+      name: "numeric instructions",
+      request: scene3Request([{ type: "text", text: "文本" }], { parameters: { instructions: 5 } }),
+      message: "Parameter instructions must be a string",
     },
     {
       name: "base64 audio source",
