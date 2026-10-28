@@ -361,6 +361,26 @@ describe("openai.audioSpeech scene3 requests", () => {
     });
   });
 
+  it.each<{ name: string; parameters?: Record<string, unknown>; metadata: Record<string, unknown> }>([
+    {
+      name: "seed 0",
+      parameters: { seed: 0 },
+      metadata: { references: [{ url: REFERENCE_URL }], drama_value: 0.5, seed: 0 },
+    },
+    {
+      name: "seed 7",
+      parameters: { seed: 7 },
+      metadata: { references: [{ url: REFERENCE_URL }], drama_value: 0.5, seed: 7 },
+    },
+    { name: "no seed", metadata: { references: [{ url: REFERENCE_URL }], drama_value: 0.5 } },
+  ])("sends seed in metadata only when it is given ($name)", async ({ parameters, metadata }) => {
+    const { client, calls } = recordingClient();
+
+    await client.generate({ model: "scene3", content: [{ type: "text", text: "文本" }, audio()], parameters });
+
+    expect(requestBody(calls[0])).toEqual({ model: "scene3", input: "文本", metadata });
+  });
+
   it("sends one clone reference as a trimmed URL without a transcript", async () => {
     const { client, calls } = recordingClient();
 
@@ -463,6 +483,16 @@ describe("openai.audioSpeech scene3 validation", () => {
       name: "NaN drama_value",
       request: scene3Request([{ type: "text", text: "文本" }], { parameters: { drama_value: Number.NaN } }),
       message: "Parameter drama_value must be a number",
+    },
+    {
+      name: "negative seed",
+      request: scene3Request([{ type: "text", text: "文本" }], { parameters: { seed: -1 } }),
+      message: "Parameter seed must be >= 0",
+    },
+    {
+      name: "fractional seed",
+      request: scene3Request([{ type: "text", text: "文本" }], { parameters: { seed: 1.5 } }),
+      message: "Parameter seed must be an integer",
     },
     {
       name: "base64 audio source",

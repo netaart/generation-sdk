@@ -830,6 +830,12 @@ const audioSpeechModels = [
         description:
           "How dramatic the delivery is, from 0 (steady, restrained) to 1 (vivid, dramatic); 0.5 is the standard delivery.",
       },
+      seed: {
+        type: "integer",
+        optional: true,
+        min: 0,
+        description: "Random seed for reproducibility.",
+      },
     },
     examples: [
       {

@@ -149,6 +149,7 @@ function buildScene3Payload(
   const metadata: Record<string, unknown> = {};
   if (references.length > 0) metadata.references = references;
   if (input.parameters.drama_value !== undefined) metadata.drama_value = input.parameters.drama_value;
+  if (input.parameters.seed !== undefined) metadata.seed = input.parameters.seed;
 
   const payload: Record<string, unknown> = { model: SCENE3_MODEL, input: text.text };
   if (Object.keys(metadata).length > 0) payload.metadata = metadata;
