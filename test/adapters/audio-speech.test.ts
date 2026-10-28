@@ -299,7 +299,7 @@ describe("openai.audioSpeech adapter validation", () => {
 });
 
 describe("openai.audioSpeech scene3 requests", () => {
-  it("sends a built-in voice request with the text exactly as given", async () => {
+  it("sends a built-in voice request with the text exactly as given and the default drama_value", async () => {
     const { client, calls } = recordingClient();
     const input = "  [sighs] We missed the last train again. [laughs] Well, at least the night is warm.\n";
 
@@ -307,7 +307,58 @@ describe("openai.audioSpeech scene3 requests", () => {
 
     expect(calls).toHaveLength(1);
     expect(calls[0]?.url).toBe("https://router.neta.art/v1/audio/speech");
-    expect(requestBody(calls[0])).toEqual({ model: "scene3", input });
+    expect(requestBody(calls[0])).toEqual({ model: "scene3", input, metadata: { drama_value: 0.5 } });
+  });
+
+  it("sends an explicit drama_value with the built-in voice", async () => {
+    const { client, calls } = recordingClient();
+
+    await client.generate({
+      model: "scene3",
+      content: [{ type: "text", text: "文本" }],
+      parameters: { drama_value: 0.2 },
+    });
+
+    expect(requestBody(calls[0])).toEqual({ model: "scene3", input: "文本", metadata: { drama_value: 0.2 } });
+  });
+
+  it.each([0, 0.8, 1])("sends an explicit drama_value of %s next to the references", async (dramaValue) => {
+    const { client, calls } = recordingClient();
+
+    await client.generate({
+      model: "scene3",
+      content: [{ type: "text", text: "使用参考音频的声音朗读这段文本。" }, audio()],
+      parameters: { drama_value: dramaValue },
+    });
+
+    expect(requestBody(calls[0])).toEqual({
+      model: "scene3",
+      input: "使用参考音频的声音朗读这段文本。",
+      metadata: { references: [{ url: REFERENCE_URL }], drama_value: dramaValue },
+    });
+  });
+
+  it.each([2, 16])("sends %i references in order, each with its own transcript when given", async (count) => {
+    const { client, calls } = recordingClient();
+    const urls = Array.from({ length: count }, (_, index) => `https://example.com/speaker-${index}.mp3`);
+    const input = urls.map((_, index) => `<|speaker:${index}|>第${index}句台词。`).join("");
+
+    await client.generate({
+      model: "scene3",
+      content: [
+        { type: "text", text: input },
+        ...urls.map((url, index) => (index % 2 === 0 ? audio(url, { text: `  第${index}段录音。\n` }) : audio(url))),
+      ],
+    });
+
+    expect(requestBody(calls[0])).toEqual({
+      model: "scene3",
+      input,
+      metadata: {
+        references: urls.map((url, index) => (index % 2 === 0 ? { url, text: `第${index}段录音。` } : { url })),
+        drama_value: 0.5,
+      },
+    });
   });
 
   it("sends one clone reference as a trimmed URL without a transcript", async () => {
@@ -321,7 +372,7 @@ describe("openai.audioSpeech scene3 requests", () => {
     expect(requestBody(calls[0])).toEqual({
       model: "scene3",
       input: "使用参考音频的声音朗读这段文本。",
-      metadata: { references: [{ url: REFERENCE_URL }] },
+      metadata: { references: [{ url: REFERENCE_URL }], drama_value: 0.5 },
     });
   });
 
@@ -339,7 +390,7 @@ describe("openai.audioSpeech scene3 requests", () => {
     expect(requestBody(calls[0])).toEqual({
       model: "scene3",
       input: "使用参考音频的声音朗读这段文本。",
-      metadata: { references: [{ url: REFERENCE_URL, text: "参考音频里实际说的话。" }] },
+      metadata: { references: [{ url: REFERENCE_URL, text: "参考音频里实际说的话。" }], drama_value: 0.5 },
     });
   });
 });
@@ -348,6 +399,25 @@ describe("openai.audioSpeech scene3 validation", () => {
   function scene3Request(content: GenerationContentBlock[], overrides: Partial<GenerateRequest> = {}): GenerateRequest {
     return { model: "scene3", content, ...overrides };
   }
+
+  function speakerReferences(count: number): GenerationContentBlock[] {
+    return Array.from({ length: count }, (_, index) => audio(`https://example.com/speaker-${index}.mp3`));
+  }
+
+  it("declares drama_value from 0 to 1 with 0.5 as default, and up to 16 references", () => {
+    const declaration = getBuiltinGenerationModel("scene3");
+
+    expect(declaration?.parameters?.drama_value).toMatchObject({ type: "number", min: 0, max: 1, default: 0.5 });
+    expect(declaration?.content.input.find((spec) => spec.type === "audio")?.max).toBe(16);
+  });
+
+  it("keeps drama_value to scene3: the Qwen model rejects it as an unknown parameter", () => {
+    const client = createGenerationClient({ apiKey: "key" });
+
+    expect(() => client.validate(qwenDesignRequest({ parameters: { drama_value: 0.5 } }))).toThrow(
+      "Unknown parameter: drama_value",
+    );
+  });
 
   it.each<{ name: string; request: GenerateRequest; message: string }>([
     { name: "zero text blocks", request: scene3Request([]), message: "Missing required text content block" },
@@ -365,9 +435,34 @@ describe("openai.audioSpeech scene3 validation", () => {
       message: "scene3 requires exactly one non-empty text content block as input",
     },
     {
-      name: "two audio blocks",
-      request: scene3Request([{ type: "text", text: "文本" }, audio(), audio(SECOND_REFERENCE_URL)]),
-      message: "Expected at most 1 audio content block(s)",
+      name: "seventeen audio blocks",
+      request: scene3Request([{ type: "text", text: "文本" }, ...speakerReferences(17)]),
+      message: "Expected at most 16 audio content block(s)",
+    },
+    {
+      name: "drama_value below 0",
+      request: scene3Request([{ type: "text", text: "文本" }], { parameters: { drama_value: -0.1 } }),
+      message: "Parameter drama_value must be >= 0",
+    },
+    {
+      name: "drama_value above 1",
+      request: scene3Request([{ type: "text", text: "文本" }], { parameters: { drama_value: 1.1 } }),
+      message: "Parameter drama_value must be <= 1",
+    },
+    {
+      name: "string drama_value",
+      request: scene3Request([{ type: "text", text: "文本" }], { parameters: { drama_value: "high" } }),
+      message: "Parameter drama_value must be a number",
+    },
+    {
+      name: "null drama_value",
+      request: scene3Request([{ type: "text", text: "文本" }], { parameters: { drama_value: null } }),
+      message: "Parameter drama_value must be a number",
+    },
+    {
+      name: "NaN drama_value",
+      request: scene3Request([{ type: "text", text: "文本" }], { parameters: { drama_value: Number.NaN } }),
+      message: "Parameter drama_value must be a number",
     },
     {
       name: "base64 audio source",
@@ -416,12 +511,12 @@ describe("openai.audioSpeech scene3 validation", () => {
     if (!declaration) throw new Error("scene3 declaration is unavailable");
     const audioSpec = declaration.content.input.find((spec) => spec.type === "audio");
     if (!audioSpec) throw new Error("scene3 audio spec is unavailable");
-    audioSpec.max = 2;
+    audioSpec.max = 17;
     const client = createGenerationClient({ models: [declaration], includeBuiltinModels: false, apiKey: "key" });
 
-    expect(() =>
-      client.validate(scene3Request([{ type: "text", text: "文本" }, audio(), audio(SECOND_REFERENCE_URL)])),
-    ).toThrow("scene3 supports at most one reference audio");
+    expect(() => client.validate(scene3Request([{ type: "text", text: "文本" }, ...speakerReferences(17)]))).toThrow(
+      "scene3 supports at most 16 reference audios",
+    );
   });
 });
 
