@@ -383,7 +383,11 @@ describe("openai.audioSpeech scene3 requests", () => {
   ])("sends seed in metadata only when it is given ($name)", async ({ parameters, metadata }) => {
     const { client, calls } = recordingClient();
 
-    await client.generate({ model: "scene3", content: [{ type: "text", text: "文本" }, audio()], parameters });
+    await client.generate({
+      model: "scene3",
+      content: [{ type: "text", text: "文本" }, audio()],
+      ...(parameters ? { parameters } : {}),
+    });
 
     expect(requestBody(calls[0])).toEqual({ model: "scene3", input: "文本", metadata });
   });
@@ -398,7 +402,11 @@ describe("openai.audioSpeech scene3 requests", () => {
   ])("sends instructions at the top level only when they are $name", async ({ parameters, instructions }) => {
     const { client, calls } = recordingClient();
 
-    await client.generate({ model: "scene3", content: [{ type: "text", text: "文本" }], parameters });
+    await client.generate({
+      model: "scene3",
+      content: [{ type: "text", text: "文本" }],
+      ...(parameters ? { parameters } : {}),
+    });
 
     expect(requestBody(calls[0])).toEqual({
       model: "scene3",
