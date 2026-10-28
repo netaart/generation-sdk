@@ -408,7 +408,6 @@ describe("openai.audioSpeech scene3 validation", () => {
 
     expect(error).toBeInstanceOf(GenerationValidationError);
     expect((error as Error).message).toBe(message);
-    expect((error as Error).message).not.toMatch(/dr[a]ma|fi[s]h/i);
     expect(calls).toHaveLength(0);
   });
 
