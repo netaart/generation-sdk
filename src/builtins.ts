@@ -799,7 +799,7 @@ const audioSpeechModels = [
     title: "Scene 3",
     category: "audio",
     description:
-      "Modes: built-in voice, or clone from up to 16 reference recordings. Direction: inline [bracketed] cues such as [sighs] or [laughs] in the text mark where a sound or a change of delivery lands. Dependency: clone prior generated audio.",
+      "Modes: built-in voice, or clone from up to 16 reference recordings. Direction: controls written in the text (see the text input), and the instructions parameter for a note on every sentence. Not supported: speed, response_format, voice, voice_prompt, stream, or a separate language parameter (write the language in the text, e.g. [language: ja]). Dependency: clone prior generated audio.",
     adapter: { type: "openai.audioSpeech" },
     content: {
       input: [
@@ -808,7 +808,8 @@ const audioSpeechModels = [
           required: true,
           min: 1,
           max: 1,
-          description: "Exactly one non-empty text block to speak; inline [bracketed] cues direct the delivery.",
+          description:
+            "Exactly one non-empty text block to speak. Controls written in the text: a cue such as [sighs], [laughs] or [pause] acts where it stands; <whisper>…</whisper> sets the delivery of the enclosed words; a [style] prefix such as [with bright eager excitement] sets the delivery of its line; <|speaker:N|> starts the turn of speaker N, from 0 to 15; [language: xx] at the end of a line names the main language; [audio tokens: N] at the end of a line hints its length, about 21.5 per second of audio. Hints are not spoken.",
         },
         {
           type: "audio",
@@ -880,7 +881,7 @@ const audioSpeechModels = [
         },
       },
       {
-        title: "Two speakers, more dramatic delivery",
+        title: "Two speakers, livelier delivery",
         request: {
           model: "scene3",
           content: [

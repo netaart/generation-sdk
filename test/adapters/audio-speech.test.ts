@@ -469,6 +469,32 @@ describe("openai.audioSpeech scene3 validation", () => {
     );
   });
 
+  it("names the inputs it does not take and the controls the text can carry", () => {
+    const declaration = getBuiltinGenerationModel("scene3");
+    const text = declaration?.content.input.find((spec) => spec.type === "text")?.description ?? "";
+
+    expect(declaration?.description).toContain(
+      "Not supported: speed, response_format, voice, voice_prompt, stream, or a separate language parameter (write the language in the text, e.g. [language: ja]).",
+    );
+    for (const control of [
+      "[sighs]",
+      "<whisper>…</whisper>",
+      "[style] prefix",
+      "<|speaker:N|>",
+      "[language: xx]",
+      "[audio tokens: N]",
+    ]) {
+      expect(text, control).toContain(control);
+    }
+  });
+
+  it("keeps the backend model and its sampling out of the declaration", () => {
+    // drama_value is the one public name that may carry the word, so it is taken out before the check.
+    const published = JSON.stringify(getBuiltinGenerationModel("scene3")).replaceAll("drama_value", "");
+
+    expect(published).not.toMatch(/drama|fish|sampl|temperature|top[-_ ]?k/i);
+  });
+
   it.each<{ name: string; value: unknown }>([
     { name: "drama_value", value: 0.5 },
     { name: "seed", value: 7 },
