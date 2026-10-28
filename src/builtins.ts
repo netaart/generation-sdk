@@ -799,7 +799,7 @@ const audioSpeechModels = [
     title: "Scene 3",
     category: "audio",
     description:
-      "Modes: built-in voice, or one-reference clone. Direction: inline [bracketed] cues such as [sighs] or [laughs] in the text mark where a sound or a change of delivery lands. Dependency: clone prior generated audio.",
+      "Modes: built-in voice, or clone from up to 16 reference recordings. Direction: inline [bracketed] cues such as [sighs] or [laughs] in the text mark where a sound or a change of delivery lands. Dependency: clone prior generated audio.",
     adapter: { type: "openai.audioSpeech" },
     content: {
       input: [
@@ -813,12 +813,23 @@ const audioSpeechModels = [
         {
           type: "audio",
           required: false,
-          max: 1,
+          max: 16,
           sources: ["url"],
           description:
-            "Clone: one reference recording URL. meta.text: optional transcript of that recording, transcribed downstream when omitted. Dependency: use prior generated audio.",
+            "Clone: up to 16 reference recording URLs. With `<|speaker:N|>` tags in the text, the N-th recording (from 0) is that speaker's voice; without tags they are joined into one voice. meta.text: optional transcript of that recording, transcribed downstream when omitted. Dependency: use prior generated audio.",
         },
       ],
+    },
+    parameters: {
+      drama_value: {
+        type: "number",
+        optional: true,
+        default: 0.5,
+        min: 0,
+        max: 1,
+        description:
+          "How dramatic the delivery is, from 0 (steady, restrained) to 1 (vivid, dramatic); 0.5 is the standard delivery.",
+      },
     },
     examples: [
       {
@@ -855,6 +866,18 @@ const audioSpeechModels = [
               meta: { text: "参考音频里实际说的话。" },
             },
           ],
+        },
+      },
+      {
+        title: "Two speakers, more dramatic delivery",
+        request: {
+          model: "scene3",
+          content: [
+            { type: "text", text: "<|speaker:0|>[gasps] You came back! <|speaker:1|>[laughs] I said I would." },
+            { type: "audio", source: { type: "url", url: "https://example.com/speaker-0.mp3" } },
+            { type: "audio", source: { type: "url", url: "https://example.com/speaker-1.mp3" } },
+          ],
+          parameters: { drama_value: 0.8 },
         },
       },
     ],
