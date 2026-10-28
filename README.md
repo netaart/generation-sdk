@@ -413,7 +413,7 @@ Each TTS request accepts exactly one non-empty text block and returns one URL au
 | Use a default voice, including a delegated choice expressed only as any, random, suitable, or natural | `qwen-tts` with a short generic `voice_prompt`, such as a natural, neutral narrator |
 
 - Qwen: `voice_prompt` design OR one-reference clone; `qwen-tts` is the unspecified-design default and accepts any text length; Plus / Flash require at least 15 Unicode code points.
-- Scene 3: built-in voice or one-reference clone, with inline `[bracketed]` delivery cues; use `scene3` when the user or an external policy names it.
+- Scene 3: built-in voice or clone from up to 16 references, with delivery controls written in the text; use `scene3` when the user or an external policy names it.
 - Conflict: reference + redesign requires user choice before generation.
 - Dependency: clone prior generated audio.
 - Ranking: no declared Qwen quality, latency, or cost order.
@@ -438,7 +438,28 @@ await client.generate({
 
 TTS reference audio only supports HTTP(S) URLs. Qwen always uses the single text block as the speech input.
 
-`scene3` takes exactly one non-empty text block, where inline `[bracketed]` cues such as `[sighs]` or `[laughs]` mark where a sound or a change of delivery lands. It also takes at most one HTTP(S) reference URL for a clone, and `meta.text` on that audio block can carry the transcript of the recording.
+`scene3` takes exactly one non-empty text block and up to 16 HTTP(S) reference recordings. Without a reference it speaks in a built-in voice; with references it clones them. `meta.text` on an audio block carries the transcript of that recording; when it is omitted, the recording is transcribed downstream.
+
+Controls are written in the text:
+
+- `[sighs]`, `[laughs]`, `[pause]` and other cues add a sound or a pause where they stand.
+- `<whisper>…</whisper>` sets the delivery of the enclosed words.
+- A `[style]` prefix sets the delivery of its line, e.g. `[with bright eager excitement] We won!`.
+- `<|speaker:N|>` starts the turn of speaker N, from 0 to 15. The N-th reference recording, counted from 0, is that speaker's voice. Without speaker tags, all references are joined into one voice.
+- `[language: xx]` at the end of a line names the main language, e.g. `[language: ja]`.
+- `[audio tokens: N]` at the end of a line hints its length, about 21.5 per second of audio.
+
+Language and length hints are not spoken.
+
+Parameters:
+
+- `drama_value` (number, 0 to 1, default 0.5): How lively the delivery is, from 0 to 1 (default 0.5, the recommended setting). Higher values give more varied intonation and fewer pauses; lower values are steadier. The effect is subtle: for a clear change of tone, use `instructions` or direction cues in the text. With the same `seed`, `drama_value` and input, the audio is the same.
+- `seed` (integer, 0 or more, optional): random seed for reproducibility.
+- `instructions` (string, optional): a director's note applied to every sentence. At most 300 characters after `[ ] < > |` are removed; a longer note is rejected before the request is sent.
+
+Not supported: `speed`, `response_format`, `voice`, `voice_prompt`, `stream`, or a separate `language` parameter. Write the language in the text instead, e.g. `[language: ja]`.
+
+Clone one recording, with its transcript:
 
 ```ts
 await client.generate({
@@ -451,6 +472,40 @@ await client.generate({
       meta: { text: "参考音频里实际说的话。" },
     },
   ],
+});
+```
+
+Two speakers, the first recording for speaker 0 and the second for speaker 1, with a livelier delivery:
+
+```ts
+await client.generate({
+  model: "scene3",
+  content: [
+    { type: "text", text: "<|speaker:0|>[gasps] You came back! <|speaker:1|>[laughs] I said I would." },
+    { type: "audio", source: { type: "url", url: "https://example.com/speaker-0.mp3" } },
+    { type: "audio", source: { type: "url", url: "https://example.com/speaker-1.mp3" } },
+  ],
+  parameters: { drama_value: 0.8 },
+});
+```
+
+A fixed seed, so the same request gives the same audio:
+
+```ts
+await client.generate({
+  model: "scene3",
+  content: [{ type: "text", text: "Welcome back to the show. [language: en]" }],
+  parameters: { seed: 42 },
+});
+```
+
+A director's note for every sentence:
+
+```ts
+await client.generate({
+  model: "scene3",
+  content: [{ type: "text", text: "今晚的风很温柔。我们慢慢走回家吧。" }],
+  parameters: { instructions: "Calm and warm, like a bedtime story." },
 });
 ```
 

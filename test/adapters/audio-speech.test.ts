@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
   createGenerationClient,
@@ -456,6 +458,15 @@ describe("openai.audioSpeech scene3 validation", () => {
     return Array.from({ length: count }, (_, index) => audio(`https://example.com/speaker-${index}.mp3`));
   }
 
+  // The wording drama3-launch agreed for drama_value (ticket 02a); the declaration and the README carry it as is.
+  const DRAMA_VALUE_DESCRIPTION =
+    "How lively the delivery is, from 0 to 1 (default 0.5, the recommended setting). Higher values give more varied intonation and fewer pauses; lower values are steadier. The effect is subtle: for a clear change of tone, use `instructions` or direction cues in the text. With the same `seed`, `drama_value` and input, the audio is the same.";
+
+  async function readmeScene3Section(): Promise<string> {
+    const readme = await readFile(join(process.cwd(), "README.md"), "utf8");
+    return readme.slice(readme.indexOf("`scene3` takes"), readme.indexOf("## Video generation"));
+  }
+
   it("declares drama_value from 0 to 1 with 0.5 as default, and up to 16 references", () => {
     const declaration = getBuiltinGenerationModel("scene3");
 
@@ -464,9 +475,7 @@ describe("openai.audioSpeech scene3 validation", () => {
   });
 
   it("describes drama_value in the agreed words", () => {
-    expect(getBuiltinGenerationModel("scene3")?.parameters?.drama_value?.description).toBe(
-      "How lively the delivery is, from 0 to 1 (default 0.5, the recommended setting). Higher values give more varied intonation and fewer pauses; lower values are steadier. The effect is subtle: for a clear change of tone, use `instructions` or direction cues in the text. With the same `seed`, `drama_value` and input, the audio is the same.",
-    );
+    expect(getBuiltinGenerationModel("scene3")?.parameters?.drama_value?.description).toBe(DRAMA_VALUE_DESCRIPTION);
   });
 
   it("names the inputs it does not take and the controls the text can carry", () => {
@@ -493,6 +502,29 @@ describe("openai.audioSpeech scene3 validation", () => {
     const published = JSON.stringify(getBuiltinGenerationModel("scene3")).replaceAll("drama_value", "");
 
     expect(published).not.toMatch(/drama|fish|sampl|temperature|top[-_ ]?k/i);
+  });
+
+  it("documents every scene3 input and parameter in the README, each with an example", async () => {
+    const section = await readmeScene3Section();
+
+    expect(section).toContain(DRAMA_VALUE_DESCRIPTION);
+    expect(section).toContain("up to 16");
+    expect(section).toContain(
+      "Not supported: `speed`, `response_format`, `voice`, `voice_prompt`, `stream`, or a separate `language` parameter",
+    );
+    for (const control of ["[sighs]", "<whisper>", "[style]", "<|speaker:N|>", "[language: xx]", "[audio tokens: N]"]) {
+      expect(section, control).toContain(control);
+    }
+    for (const example of ["meta: { text:", "drama_value: 0.8", "seed: 42", 'instructions: "']) {
+      expect(section, example).toContain(example);
+    }
+  });
+
+  it("keeps the backend model and its sampling out of the README section", async () => {
+    const section = (await readmeScene3Section()).replaceAll("drama_value", "");
+
+    expect(section.length).toBeGreaterThan(0);
+    expect(section).not.toMatch(/drama|fish|sampl|temperature|top[-_ ]?k/i);
   });
 
   it.each<{ name: string; value: unknown }>([
