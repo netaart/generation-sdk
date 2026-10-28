@@ -30,6 +30,7 @@ parameters:
     type: integer
     optional: true
     min: 0
+    max: 9007199254740991
     description: Random seed for reproducibility.
   instructions:
     type: string

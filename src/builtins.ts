@@ -835,6 +835,8 @@ const audioSpeechModels = [
         type: "integer",
         optional: true,
         min: 0,
+        // 2^53 - 1: a larger seed would not survive the gateway's float64 round trip, and the gateway rejects it.
+        max: Number.MAX_SAFE_INTEGER,
         description: "Random seed for reproducibility.",
       },
       instructions: {

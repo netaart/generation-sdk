@@ -374,6 +374,11 @@ describe("openai.audioSpeech scene3 requests", () => {
       parameters: { seed: 7 },
       metadata: { references: [{ url: REFERENCE_URL }], drama_value: 0.5, seed: 7 },
     },
+    {
+      name: "seed 2^53 - 1",
+      parameters: { seed: 9007199254740991 },
+      metadata: { references: [{ url: REFERENCE_URL }], drama_value: 0.5, seed: 9007199254740991 },
+    },
     { name: "no seed", metadata: { references: [{ url: REFERENCE_URL }], drama_value: 0.5 } },
   ])("sends seed in metadata only when it is given ($name)", async ({ parameters, metadata }) => {
     const { client, calls } = recordingClient();
@@ -593,6 +598,11 @@ describe("openai.audioSpeech scene3 validation", () => {
       name: "fractional seed",
       request: scene3Request([{ type: "text", text: "文本" }], { parameters: { seed: 1.5 } }),
       message: "Parameter seed must be an integer",
+    },
+    {
+      name: "seed above 2^53 - 1",
+      request: scene3Request([{ type: "text", text: "文本" }], { parameters: { seed: 9007199254740992 } }),
+      message: "Parameter seed must be <= 9007199254740991",
     },
     {
       name: "301-character instructions",

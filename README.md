@@ -454,7 +454,7 @@ Language and length hints are not spoken.
 Parameters:
 
 - `drama_value` (number, 0 to 1, default 0.5): How lively the delivery is, from 0 to 1 (default 0.5, the recommended setting). Higher values give more varied intonation and fewer pauses; lower values are steadier. The effect is subtle: for a clear change of tone, use `instructions` or direction cues in the text. With the same `seed`, `drama_value` and input, the audio is the same.
-- `seed` (integer, 0 or more, optional): random seed for reproducibility.
+- `seed` (integer, 0 to 9007199254740991, optional): random seed for reproducibility.
 - `instructions` (string, optional): a director's note applied to every sentence. At most 300 characters after `[ ] < > |` are removed; a longer note is rejected before the request is sent.
 
 Not supported: `speed`, `response_format`, `voice`, `voice_prompt`, `stream`, or a separate `language` parameter. Write the language in the text instead, e.g. `[language: ja]`.
