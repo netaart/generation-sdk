@@ -493,6 +493,91 @@ describe("openai.audioSpeech Qwen instructions and seed", () => {
   });
 });
 
+describe("openai.audioSpeech Qwen retired alias qwen-audio-3.0-tts-plus", () => {
+  const FLASH = "qwen-audio-3.1-tts-flash";
+  const RETIRED_ALIAS = "qwen-audio-3.0-tts-plus";
+
+  // Cohub's platform config declares the retired id with the same shape as the flash model; the SDK never declares it.
+  function platformDeclaration(model: string): GenerationModelDeclaration {
+    const declaration = getBuiltinGenerationModel(FLASH);
+    if (!declaration) throw new Error(`${FLASH} declaration is unavailable`);
+    return { ...structuredClone(declaration), model };
+  }
+
+  function platformClient(model: string, fetchMock: typeof fetch = vi.fn() as unknown as typeof fetch) {
+    return createGenerationClient({
+      models: [platformDeclaration(model)],
+      includeBuiltinModels: false,
+      apiKey: "key",
+      fetch: fetchMock,
+    });
+  }
+
+  const designWithDirections = (model: string): GenerateRequest => ({
+    model,
+    content: [{ type: "text", text: QWEN_TEXT }],
+    meta: { voice_prompt: "沉稳清晰的男性播音员声音" },
+    parameters: { instructions: " 低声耳语 ", seed: 7 },
+  });
+  const cloneWithDirections = (model: string): GenerateRequest => ({
+    model,
+    content: [{ type: "text", text: QWEN_TEXT }, audio(REFERENCE_URL, { role: "reference_audio" })],
+    parameters: { instructions: "请慢一点" },
+  });
+
+  it.each([
+    { name: "design with instructions and seed", request: designWithDirections },
+    { name: "clone with instructions", request: cloneWithDirections },
+  ])("builds the same payload as the flash model, apart from model: $name", async ({ request }) => {
+    const sent: string[] = [];
+    const fetchMock = (async (_url: string | URL | Request, init?: RequestInit) => {
+      sent.push(String(init?.body));
+      return routerSuccess();
+    }) as typeof fetch;
+
+    await platformClient(RETIRED_ALIAS, fetchMock).generate(request(RETIRED_ALIAS));
+    await platformClient(FLASH, fetchMock).generate(request(FLASH));
+
+    const [aliasBody, flashBody] = sent.map((body) => JSON.parse(body) as Record<string, unknown>);
+    expect(aliasBody?.model).toBe(RETIRED_ALIAS);
+    expect(flashBody?.model).toBe(FLASH);
+    expect({ ...aliasBody, model: FLASH }).toEqual(flashBody);
+  });
+
+  it("applies the flash validation to the retired alias", () => {
+    const client = platformClient(RETIRED_ALIAS);
+
+    expect(() =>
+      client.validate({
+        model: RETIRED_ALIAS,
+        content: [{ type: "text", text: "太短" }],
+        meta: { voice_prompt: "声音" },
+      }),
+    ).toThrow("requires input of at least 15 Unicode code points");
+    expect(() =>
+      client.validate({
+        model: RETIRED_ALIAS,
+        content: [{ type: "text", text: QWEN_TEXT }],
+        meta: { voice_prompt: "声音", preview_text: "旧字段" },
+      }),
+    ).toThrow("Unknown request.meta field: preview_text");
+  });
+
+  it("does not declare the retired alias", () => {
+    expect(getBuiltinGenerationModel(RETIRED_ALIAS)).toBeNull();
+    expect(createGenerationClient({ apiKey: "key" }).getModel(RETIRED_ALIAS)).toBeNull();
+  });
+
+  it.each([
+    "qwen-tts",
+    "qwen-audio-3.0-tts-flash",
+  ])("still rejects a platform declaration of %s at the audio speech adapter", (model) => {
+    const client = platformClient(model);
+
+    expect(() => client.validate(qwenDesignRequest({ model }))).toThrow(`Unsupported audio speech model: ${model}`);
+  });
+});
+
 describe("openai.audioSpeech scene3 requests", () => {
   it("sends a built-in voice request with the text exactly as given and the default drama_value", async () => {
     const { client, calls } = recordingClient();
