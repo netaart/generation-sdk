@@ -412,7 +412,7 @@ Each TTS request accepts exactly one non-empty text block and returns one URL au
 | Clone a voice from one reference recording | `qwen-audio-3.1-tts-flash`; pass one HTTP(S) reference URL and no `voice_prompt` |
 | Use a default voice, including a delegated choice expressed only as any, random, suitable, or natural | `qwen-audio-3.1-tts-flash` with a short generic `voice_prompt`, such as a natural, neutral narrator |
 
-- Qwen: `voice_prompt` design OR one-reference clone via `qwen-audio-3.1-tts-flash`; requires at least 15 Unicode code points.
+- Qwen: `voice_prompt` design OR one-reference clone via `qwen-audio-3.1-tts-flash`; requires at least 15 Unicode code points. Optional `parameters.instructions` directs how the whole text is spoken (tone, emotion, pace, dialect or role) for both kinds of voice; optional `parameters.seed` (0 to 65535) is passed to the model.
 - Scene 3: built-in voice or clone from up to 16 references, with delivery controls written in the text; use `scene3` when the user or an external policy names it.
 - Conflict: reference + redesign requires user choice before generation.
 - Dependency: clone prior generated audio.
@@ -425,6 +425,7 @@ await client.generate({
   meta: {
     voice_prompt: "一位沉稳自然的中文播音员，吐字清晰，语速适中",
   },
+  parameters: { instructions: "语速放慢，声音压低，带一点疲惫" },
 });
 
 await client.generate({

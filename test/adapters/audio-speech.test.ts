@@ -445,6 +445,16 @@ describe("openai.audioSpeech Qwen instructions and seed", () => {
     expect(() => client.validate(example?.request as GenerateRequest)).not.toThrow();
   });
 
+  it("documents Qwen instructions and seed in the README's Text to speech section", async () => {
+    const readme = await readFile(join(process.cwd(), "README.md"), "utf8");
+    const section = readme.slice(readme.indexOf("## Text to speech"), readme.indexOf("`scene3` takes"));
+
+    expect(section).toContain(
+      "- Qwen: `voice_prompt` design OR one-reference clone via `qwen-audio-3.1-tts-flash`; requires at least 15 Unicode code points. Optional `parameters.instructions` directs how the whole text is spoken (tone, emotion, pace, dialect or role) for both kinds of voice; optional `parameters.seed` (0 to 65535) is passed to the model.",
+    );
+    expect(section).toContain('parameters: { instructions: "语速放慢，声音压低，带一点疲惫" }');
+  });
+
   it("sends the design body with instructions and seed together", async () => {
     const { client, calls } = recordingClient();
 
