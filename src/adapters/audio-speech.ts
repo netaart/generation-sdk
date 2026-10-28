@@ -13,6 +13,7 @@ const QWEN_AUDIO_3_MODELS = new Set(["qwen-audio-3.0-tts-plus", "qwen-audio-3.0-
 const SCENE3_MODEL = "scene3";
 const SCENE3_MAX_REFERENCES = 16;
 const SCENE3_MAX_INSTRUCTIONS = 300;
+const SCENE3_REFERENCE_ROLE = "reference_audio";
 
 type TextBlock = Extract<GenerationContentBlock, { type: "text" }>;
 type AudioBlock = Extract<GenerationContentBlock, { type: "audio" }>;
@@ -109,7 +110,12 @@ function validateScene3(input: ResolvedGenerationRequest, text: TextBlock, audio
   validateMetaKeys("request.meta", input.request.meta, new Set());
   validateMetaKeys("text content meta", text.meta, new Set());
   for (const [index, block] of audio.entries()) {
-    validateMetaKeys("audio content meta", block.meta, new Set(["text"]));
+    validateMetaKeys("audio content meta", block.meta, new Set(["text", "role"]));
+    // The cohub CLI marks reference recordings with this role; it says nothing scene3 needs, so it is not sent.
+    const role = block.meta?.role;
+    if (role !== undefined && role !== SCENE3_REFERENCE_ROLE) {
+      throw new GenerationValidationError(`audio role is not supported by ${input.declaration.model}: ${String(role)}`);
+    }
     const transcript = block.meta?.text;
     if (transcript !== undefined && (typeof transcript !== "string" || !transcript.trim())) {
       throw new GenerationValidationError(`audio content block ${index} meta.text must be a non-empty string`);

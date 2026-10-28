@@ -460,6 +460,26 @@ describe("openai.audioSpeech scene3 requests", () => {
       metadata: { references: [{ url: REFERENCE_URL, text: "参考音频里实际说的话。" }], drama_value: 0.5 },
     });
   });
+
+  // The cohub CLI writes `--audio reference_audio=<url>` as an audio block with meta.role "reference_audio".
+  it.each<{ name: string; meta: Record<string, unknown>; reference: Record<string, unknown> }>([
+    { name: "alone", meta: { role: "reference_audio" }, reference: { url: REFERENCE_URL } },
+    {
+      name: "next to meta.text",
+      meta: { role: "reference_audio", text: "参考音频里实际说的话。" },
+      reference: { url: REFERENCE_URL, text: "参考音频里实际说的话。" },
+    },
+  ])("takes meta.role reference_audio $name and does not send it", async ({ meta, reference }) => {
+    const { client, calls } = recordingClient();
+
+    await client.generate({ model: "scene3", content: [{ type: "text", text: "文本" }, audio(REFERENCE_URL, meta)] });
+
+    expect(requestBody(calls[0])).toEqual({
+      model: "scene3",
+      input: "文本",
+      metadata: { references: [reference], drama_value: 0.5 },
+    });
+  });
 });
 
 describe("openai.audioSpeech scene3 validation", () => {
@@ -644,6 +664,11 @@ describe("openai.audioSpeech scene3 validation", () => {
       name: "audio meta weight",
       request: scene3Request([{ type: "text", text: "文本" }, audio(REFERENCE_URL, { weight: 1 })]),
       message: "Unknown audio content meta field: weight",
+    },
+    {
+      name: "audio meta.role other than reference_audio",
+      request: scene3Request([{ type: "text", text: "文本" }, audio(REFERENCE_URL, { role: "first_frame" })]),
+      message: "audio role is not supported by scene3: first_frame",
     },
     {
       name: "empty audio meta.text",
