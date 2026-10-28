@@ -311,6 +311,7 @@ const client = createGenerationClient({
 - `qwen-tts`
 - `qwen-audio-3.0-tts-plus`
 - `qwen-audio-3.0-tts-flash`
+- `scene3`
 - `gemini-3.1-flash-image-preview`
 - `kling-text-to-video`
 - `kling-image-to-video`
@@ -412,6 +413,7 @@ Each TTS request accepts exactly one non-empty text block and returns one URL au
 | Use a default voice, including a delegated choice expressed only as any, random, suitable, or natural | `qwen-tts` with a short generic `voice_prompt`, such as a natural, neutral narrator |
 
 - Qwen: `voice_prompt` design OR one-reference clone; `qwen-tts` is the unspecified-design default and accepts any text length; Plus / Flash require at least 15 Unicode code points.
+- Scene 3: built-in voice or one-reference clone, with inline `[bracketed]` delivery cues; use `scene3` when the user or an external policy names it.
 - Conflict: reference + redesign requires user choice before generation.
 - Dependency: clone prior generated audio.
 - Ranking: no declared Qwen quality, latency, or cost order.
@@ -435,6 +437,22 @@ await client.generate({
 ```
 
 TTS reference audio only supports HTTP(S) URLs. Qwen always uses the single text block as the speech input.
+
+`scene3` takes exactly one non-empty text block, where inline `[bracketed]` cues such as `[sighs]` or `[laughs]` mark where a sound or a change of delivery lands. It also takes at most one HTTP(S) reference URL for a clone, and `meta.text` on that audio block can carry the transcript of the recording.
+
+```ts
+await client.generate({
+  model: "scene3",
+  content: [
+    { type: "text", text: "[sighs] We missed the last train again. [laughs] Well, at least the night is warm." },
+    {
+      type: "audio",
+      source: { type: "url", url: "https://example.com/reference.mp3" },
+      meta: { text: "参考音频里实际说的话。" },
+    },
+  ],
+});
+```
 
 ## Video generation
 
