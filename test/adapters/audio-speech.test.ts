@@ -463,6 +463,12 @@ describe("openai.audioSpeech scene3 validation", () => {
     expect(declaration?.content.input.find((spec) => spec.type === "audio")?.max).toBe(16);
   });
 
+  it("describes drama_value in the agreed words", () => {
+    expect(getBuiltinGenerationModel("scene3")?.parameters?.drama_value?.description).toBe(
+      "How lively the delivery is, from 0 to 1 (default 0.5, the recommended setting). Higher values give more varied intonation and fewer pauses; lower values are steadier. The effect is subtle: for a clear change of tone, use `instructions` or direction cues in the text. With the same `seed`, `drama_value` and input, the audio is the same.",
+    );
+  });
+
   it.each<{ name: string; value: unknown }>([
     { name: "drama_value", value: 0.5 },
     { name: "seed", value: 7 },

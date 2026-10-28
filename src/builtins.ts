@@ -828,7 +828,7 @@ const audioSpeechModels = [
         min: 0,
         max: 1,
         description:
-          "How dramatic the delivery is, from 0 (steady, restrained) to 1 (vivid, dramatic); 0.5 is the standard delivery.",
+          "How lively the delivery is, from 0 to 1 (default 0.5, the recommended setting). Higher values give more varied intonation and fewer pauses; lower values are steadier. The effect is subtle: for a clear change of tone, use `instructions` or direction cues in the text. With the same `seed`, `drama_value` and input, the audio is the same.",
       },
       seed: {
         type: "integer",
