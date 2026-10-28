@@ -438,18 +438,20 @@ await client.generate({
 
 TTS reference audio only supports HTTP(S) URLs. Qwen always uses the single text block as the speech input.
 
-`scene3` takes exactly one non-empty text block and up to 16 HTTP(S) reference recordings. Without a reference it speaks in a built-in voice; with references it clones them. `meta.text` on an audio block carries the transcript of that recording; when it is omitted, the recording is transcribed downstream.
+`scene3` takes exactly one non-empty text block, in any of about 80 languages, and up to 16 HTTP(S) reference recordings. Without a reference it speaks in a built-in voice; with references it clones them. `meta.text` on an audio block carries the transcript of that recording; when it is omitted, the recording is transcribed downstream.
+
+Each reference recording works best at 1 to 20 s. A recording under 1 s is rejected; one over 20 s is cut at a quiet point before the 20 s mark, and only the part before the cut is kept.
 
 Controls are written in the text:
 
 - `[sighs]`, `[laughs]`, `[pause]` and other cues add a sound or a pause where they stand.
-- `<whisper>…</whisper>` sets the delivery of the enclosed words.
-- A `[style]` prefix sets the delivery of its line, e.g. `[with bright eager excitement] We won!`.
+- A scoped tag such as `<whisper>…</whisper>`, `<slow>…</slow>` or `<emphasis>…</emphasis>` sets the delivery of the enclosed words.
+- A director's note sets the delivery of its line. Write it as a `[style]` prefix, e.g. `[with bright eager excitement] We won!`, or as `Direction: … Line: …`, e.g. `Direction: icy calm, as if you already accepted it. Line: So this is goodbye.`
 - `<|speaker:N|>` starts the turn of speaker N, from 0 to 15. The N-th reference recording, counted from 0, is that speaker's voice. Without speaker tags, all references are joined into one voice.
 - `[language: xx]` at the end of a line names the main language, e.g. `[language: ja]`.
 - `[audio tokens: N]` at the end of a line hints its length, about 21.5 per second of audio.
 
-Language and length hints are not spoken.
+Cues, scoped tags and director's notes are free natural language; the ones above are only examples. `[language: xx]` and `[audio tokens: N]` are hints and are not spoken. Text in round parentheses `( )` is spoken as written, so put delivery in square brackets.
 
 Parameters:
 

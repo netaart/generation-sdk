@@ -11,13 +11,13 @@ content:
       required: true
       min: 1
       max: 1
-      description: 'Exactly one non-empty text block to speak. Controls written in the text: a cue such as [sighs], [laughs] or [pause] acts where it stands; <whisper>…</whisper> sets the delivery of the enclosed words; a [style] prefix such as [with bright eager excitement] sets the delivery of its line; <|speaker:N|> starts the turn of speaker N, from 0 to 15; [language: xx] at the end of a line names the main language; [audio tokens: N] at the end of a line hints its length, about 21.5 per second of audio. Hints are not spoken.'
+      description: 'Exactly one non-empty text block to speak, in any of about 80 languages. Controls written in the text: a cue such as [sighs], [laughs] or [pause] acts where it stands; a scoped tag such as <whisper>…</whisper>, <slow>…</slow> or <emphasis>…</emphasis> sets the delivery of the enclosed words; a director''s note, either a [style] prefix such as [with bright eager excitement] or `Direction: … Line: …`, sets the delivery of its line; <|speaker:N|> starts the turn of speaker N, from 0 to 15; [language: xx] at the end of a line names the main language; [audio tokens: N] at the end of a line hints its length, about 21.5 per second of audio. Cues, scoped tags and director''s notes are free natural language; the ones named here are only examples. [language: xx] and [audio tokens: N] are hints and are not spoken. Text in round parentheses ( ) is spoken as written, so put delivery in square brackets.'
     - type: audio
       required: false
       max: 16
       sources:
         - url
-      description: 'Clone: up to 16 reference recording URLs. With `<|speaker:N|>` tags in the text, the N-th recording (from 0) is that speaker''s voice; without tags they are joined into one voice. meta.text: optional transcript of that recording, transcribed downstream when omitted. Dependency: use prior generated audio.'
+      description: 'Clone: up to 16 reference recording URLs. Each works best at 1 to 20 s: one under 1 s is rejected, and one over 20 s is cut at a quiet point before the 20 s mark, and only the part before the cut is kept. With `<|speaker:N|>` tags in the text, the N-th recording (from 0) is that speaker''s voice; without tags they are joined into one voice. meta.text: optional transcript of that recording, transcribed downstream when omitted. Dependency: use prior generated audio.'
 parameters:
   drama_value:
     type: number

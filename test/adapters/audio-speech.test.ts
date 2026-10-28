@@ -500,6 +500,28 @@ describe("openai.audioSpeech scene3 validation", () => {
     return readme.slice(readme.indexOf("`scene3` takes"), readme.indexOf("## Video generation"));
   }
 
+  // What the text input and the reference recordings must tell a caller (drama3-launch, after the parameter table).
+  const TEXT_FACTS = [
+    "about 80 languages",
+    "<whisper>…</whisper>",
+    "<slow>…</slow>",
+    "<emphasis>…</emphasis>",
+    "Direction: … Line: …",
+    "free natural language",
+    "only examples",
+    "are hints and are not spoken",
+    "round parentheses",
+    "spoken as written",
+    "square brackets",
+    "about 21.5 per second of audio",
+  ];
+  const REFERENCE_FACTS = [
+    "1 to 20 s",
+    "under 1 s is rejected",
+    "over 20 s is cut at a quiet point",
+    "only the part before the cut is kept",
+  ];
+
   it("declares drama_value from 0 to 1 with 0.5 as default, and up to 16 references", () => {
     const declaration = getBuiltinGenerationModel("scene3");
 
@@ -530,6 +552,15 @@ describe("openai.audioSpeech scene3 validation", () => {
     }
   });
 
+  it("tells what the text can carry and which reference recordings work", () => {
+    const declaration = getBuiltinGenerationModel("scene3");
+    const text = declaration?.content.input.find((spec) => spec.type === "text")?.description ?? "";
+    const references = declaration?.content.input.find((spec) => spec.type === "audio")?.description ?? "";
+
+    for (const fact of TEXT_FACTS) expect(text, fact).toContain(fact);
+    for (const fact of REFERENCE_FACTS) expect(references, fact).toContain(fact);
+  });
+
   it("keeps the backend model and its sampling out of the declaration", () => {
     // drama_value is the one public name that may carry the word, so it is taken out before the check.
     const published = JSON.stringify(getBuiltinGenerationModel("scene3")).replaceAll("drama_value", "");
@@ -551,6 +582,7 @@ describe("openai.audioSpeech scene3 validation", () => {
     for (const example of ["meta: { text:", "drama_value: 0.8", "seed: 42", 'instructions: "']) {
       expect(section, example).toContain(example);
     }
+    for (const fact of [...TEXT_FACTS, ...REFERENCE_FACTS]) expect(section, fact).toContain(fact);
   });
 
   it("keeps the backend model and its sampling out of the README section", async () => {
