@@ -127,6 +127,22 @@ describe("openai.audioSpeech adapter requests", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it.each([
+    "qwen-tts",
+    "qwen-audio-3.0-tts-plus",
+    "qwen-audio-3.0-tts-flash",
+  ])("rejects the retired Qwen id %s as an unavailable model before fetch", async (model) => {
+    const fetchMock = vi.fn(async () => routerSuccess());
+    const client = createGenerationClient({ apiKey: "key", fetch: fetchMock as typeof fetch });
+
+    await expect(client.generate({ model, content: [{ type: "text", text: QWEN_TEXT }] })).rejects.toMatchObject({
+      constructor: GenerationConfigError,
+      message: `Generation model is unavailable: ${model}`,
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(client.getModel(model)).toBeNull();
+  });
+
   it("rejects a higgs-tts request before fetch", async () => {
     const fetchMock = vi.fn(async () => routerSuccess());
     const client = createGenerationClient({ apiKey: "key", fetch: fetchMock as typeof fetch });
