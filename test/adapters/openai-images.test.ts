@@ -31,6 +31,84 @@ describe("openai.images adapter", () => {
     expect(output[0]).toEqual({ type: "image", source: { type: "url", url: "https://example.com/out.png" } });
     expect(JSON.parse(String(calls[0]?.init.body))).not.toHaveProperty("background");
     expect(JSON.parse(String(calls[0]?.init.body))).not.toHaveProperty("output_format");
+    expect(JSON.parse(String(calls[0]?.init.body))).not.toHaveProperty("mask");
+  });
+
+  it("forwards a mask from meta to GPT image generation", async () => {
+    const calls: Array<{ url: string; init: RequestInit }> = [];
+    const fetchMock = async (url: string | URL | Request, init?: RequestInit) => {
+      calls.push({ url: String(url), init: init ?? {} });
+      return new Response(JSON.stringify({ data: [{ url: "https://example.com/out.png" }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    };
+
+    const client = createGenerationClient({ apiKey: "key", fetch: fetchMock as typeof fetch });
+    await client.generate({
+      model: "gpt-image-2",
+      content: [
+        { type: "text", text: "replace the pool water with a flamingo float" },
+        { type: "image", source: { type: "url", url: "https://example.com/room.png" } },
+      ],
+      meta: { mask: "https://example.com/mask.png" },
+    });
+
+    expect(calls[0]?.url).toBe("https://router.neta.art/v1/images/generations");
+    expect(JSON.parse(String(calls[0]?.init.body))).toMatchObject({
+      model: "gpt-image-2",
+      image: ["https://example.com/room.png"],
+      mask: "https://example.com/mask.png",
+    });
+  });
+
+  it("forwards provider meta and drops SDK block markers", async () => {
+    const calls: Array<{ url: string; init: RequestInit }> = [];
+    const fetchMock = async (url: string | URL | Request, init?: RequestInit) => {
+      calls.push({ url: String(url), init: init ?? {} });
+      return new Response(JSON.stringify({ data: [{ url: "https://example.com/out.png" }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    };
+
+    const client = createGenerationClient({ apiKey: "key", fetch: fetchMock as typeof fetch });
+    await client.generate({
+      model: "gpt-image-2",
+      content: [
+        { type: "text", text: "replace the pool water with a flamingo float" },
+        {
+          type: "image",
+          source: { type: "url", url: "https://example.com/room.png" },
+          meta: { role: "reference_image" },
+        },
+      ],
+      parameters: { quality: "low" },
+      meta: { mask: "https://example.com/mask.png", quality: "high" },
+    });
+
+    const body = JSON.parse(String(calls[0]?.init.body));
+    expect(body).toMatchObject({
+      model: "gpt-image-2",
+      image: ["https://example.com/room.png"],
+      mask: "https://example.com/mask.png",
+      quality: "high",
+    });
+    expect(body).not.toHaveProperty("role");
+  });
+
+  it("rejects a non-string mask", async () => {
+    const client = createGenerationClient({ apiKey: "key", fetch: (() => undefined) as unknown as typeof fetch });
+    await expect(
+      client.generate({
+        model: "gpt-image-2",
+        content: [
+          { type: "text", text: "replace the pool water" },
+          { type: "image", source: { type: "url", url: "https://example.com/room.png" } },
+        ],
+        meta: { mask: 42 },
+      }),
+    ).rejects.toThrow("meta.mask must be a string");
   });
 
   it("forwards GPT image transparent background requests as png", async () => {

@@ -26,3 +26,11 @@ export function compactObject<T extends Record<string, unknown>>(value: T): T {
   for (const key of Object.keys(value)) if (value[key] === undefined) delete value[key];
   return value;
 }
+
+/** Provider request fields carried in meta, without the SDK's own block markers. */
+export function providerMeta(meta: Record<string, unknown>): Record<string, unknown> {
+  const rest = { ...meta };
+  delete rest.cohub;
+  delete rest.role;
+  return rest;
+}

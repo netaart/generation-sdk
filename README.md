@@ -353,6 +353,19 @@ const output = await client.generate({
 });
 ```
 
+`gpt-image-2` also takes a mask that marks the area to redraw. Pass its image URL or data URL as `meta.mask`; it must match the reference image in format and size and carry an alpha channel, and transparent areas are the ones redrawn.
+
+```ts
+const masked = await client.generate({
+  model: "gpt-image-2",
+  content: [
+    { type: "text", text: "replace the pool water with a pink inflatable flamingo" },
+    { type: "image", source: { type: "url", url: "https://example.com/lounge.png" } },
+  ],
+  meta: { mask: "https://example.com/pool-mask.png" },
+});
+```
+
 ## Image models
 
 These image models use the same client API as the other built-in models:

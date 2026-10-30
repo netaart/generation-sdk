@@ -2,7 +2,7 @@ import { GenerationProviderError, GenerationTimeoutError, GenerationValidationEr
 import { fetchWithTimeout, joinUrl } from "../http.js";
 import { taskPollTicks } from "../task-poll.js";
 import type { GenerationAdapterInput, GenerationContentBlock, GenerationSource } from "../types.js";
-import { compactObject, getBlockMeta } from "../utils.js";
+import { compactObject, getBlockMeta, providerMeta } from "../utils.js";
 import { mergeTextBlocks } from "../validation.js";
 
 // Keep per-request timeout comfortably above max_wait so polling controls total wait time.
@@ -121,13 +121,6 @@ function asNumber(value: unknown): number | undefined {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
-}
-
-function providerMeta(input: Record<string, unknown>): Record<string, unknown> {
-  const rest = { ...input };
-  delete rest.cohub;
-  delete rest.role;
-  return rest;
 }
 
 function normalizeStatus(value: unknown): string {

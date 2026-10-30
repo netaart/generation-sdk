@@ -1688,6 +1688,16 @@ const builtinModels = [
       ],
     },
     parameters: imageSizeParameters,
+    meta: {
+      fields: {
+        mask: {
+          type: "string",
+          optional: true,
+          description:
+            "Image URL or data URL of the mask that marks the area to redraw. Requires a reference image, and the mask must match the reference image in format and size and carry an alpha channel.",
+        },
+      },
+    },
     examples: [
       {
         title: "Basic image",
