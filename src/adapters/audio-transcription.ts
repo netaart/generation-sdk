@@ -10,7 +10,7 @@ import type {
 
 const FORMATS = new Set(["wav", "mp3", "ogg", "raw"]);
 
-type TranscriptSegment = { start: number; end: number; text: string };
+type TranscriptSegment = { start: number; end: number; text: string; speaker?: string };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -53,6 +53,28 @@ export function buildAudioTranscriptionPayload(input: ResolvedGenerationRequest)
     audio_format: format,
     ...(language !== undefined ? { language } : {}),
     response_format: "verbose_json",
+    ...speakerPayload(input.parameters, language),
+  };
+}
+
+function speakerPayload(parameters: Record<string, unknown>, language: unknown): Record<string, unknown> {
+  const { enable_speaker_info, ssd_version, ssd_mode } = parameters;
+  if (enable_speaker_info !== true) {
+    if (ssd_version !== undefined || ssd_mode !== undefined) {
+      throw new GenerationValidationError("ssd_version and ssd_mode require enable_speaker_info=true");
+    }
+    return {};
+  }
+  if (language !== undefined && language !== "zh-CN") {
+    throw new GenerationValidationError("Speaker separation requires language to be unset or zh-CN");
+  }
+  if (ssd_mode !== undefined && ssd_version !== undefined && ssd_version !== "200") {
+    throw new GenerationValidationError('ssd_mode requires ssd_version "200"');
+  }
+  return {
+    enable_speaker_info: true,
+    ssd_version: ssd_version ?? "200",
+    ...(ssd_mode !== undefined ? { ssd_mode } : {}),
   };
 }
 
@@ -78,11 +100,17 @@ export function parseAudioTranscriptionResponse(raw: unknown): GenerationContent
         segment.start < 0 ||
         typeof segment.end !== "number" ||
         !Number.isFinite(segment.end) ||
-        segment.end < segment.start
+        segment.end < segment.start ||
+        (segment.speaker !== undefined && (typeof segment.speaker !== "string" || segment.speaker.length === 0))
       ) {
-        throw new GenerationProviderError("Invalid transcription segment text or timestamps");
+        throw new GenerationProviderError("Invalid transcription segment text, timestamps or speaker");
       }
-      segments.push({ start: segment.start, end: segment.end, text: segment.text });
+      segments.push({
+        start: segment.start,
+        end: segment.end,
+        text: segment.text,
+        ...(segment.speaker !== undefined ? { speaker: segment.speaker } : {}),
+      });
     }
   }
   return { type: "text", text: raw.text, meta: { duration: raw.duration, segments } };

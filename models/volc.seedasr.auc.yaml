@@ -37,6 +37,24 @@ parameters:
     min: 1
     max: 1800
     description: SDK request timeout in seconds. Does not extend gateway or provider timeouts.
+  enable_speaker_info:
+    type: boolean
+    optional: true
+    default: false
+    description: Separate speakers and return a speaker label on each segment. Requires language unset or zh-CN.
+  ssd_version:
+    type: string
+    optional: true
+    enum:
+      - "200"
+      - "300"
+    description: 'Speaker separation version: 200 for general audio, 300 for long meeting recordings. Defaults to 200. Requires enable_speaker_info.'
+  ssd_mode:
+    type: integer
+    optional: true
+    min: 0
+    max: 1
+    description: 'Clustering mode for ssd_version 200: 0 for short audio, 1 for long non-meeting audio. Requires ssd_version 200.'
 examples:
   - title: Transcribe a recording
     request:
