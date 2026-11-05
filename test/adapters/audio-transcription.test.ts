@@ -126,4 +126,84 @@ describe("audio transcription", () => {
   ])("rejects malformed response %j", (response) => {
     expect(() => parseAudioTranscriptionResponse(response)).toThrow();
   });
+
+  it("sends speaker options with the documented defaults", () => {
+    expect(buildAudioTranscriptionPayload(client.validate(request({ enable_speaker_info: true })))).toEqual({
+      model: "volc.seedasr.auc",
+      audio_url: "https://example.com/recording.WAV?signature=abc",
+      audio_format: "wav",
+      response_format: "verbose_json",
+      enable_speaker_info: true,
+      ssd_version: "200",
+    });
+    expect(
+      buildAudioTranscriptionPayload(
+        client.validate(request({ enable_speaker_info: true, language: "zh-CN", ssd_version: "200", ssd_mode: 1 })),
+      ),
+    ).toMatchObject({ enable_speaker_info: true, ssd_version: "200", ssd_mode: 1, language: "zh-CN" });
+    expect(
+      buildAudioTranscriptionPayload(client.validate(request({ enable_speaker_info: true, ssd_version: "300" }))),
+    ).toMatchObject({ enable_speaker_info: true, ssd_version: "300" });
+  });
+
+  it("omits speaker fields when the option is off", () => {
+    const payload = buildAudioTranscriptionPayload(client.validate(request({ enable_speaker_info: false })));
+    expect(payload).not.toHaveProperty("enable_speaker_info");
+    expect(payload).not.toHaveProperty("ssd_version");
+  });
+
+  it.each([
+    { ssd_version: "200" },
+    { ssd_mode: 0 },
+    { enable_speaker_info: false, ssd_version: "300" },
+  ])("rejects speaker tuning without enable_speaker_info %j", (parameters) => {
+    expect(() => buildAudioTranscriptionPayload(client.validate(request(parameters)))).toThrow(
+      GenerationValidationError,
+    );
+  });
+
+  it.each([
+    { enable_speaker_info: true, language: "en-US" },
+    { enable_speaker_info: true, ssd_version: "100" },
+    { enable_speaker_info: true, ssd_mode: 2 },
+    { enable_speaker_info: true, ssd_version: "300", ssd_mode: 1 },
+    { enable_speaker_info: "true" },
+  ])("rejects invalid speaker options %j", (parameters) => {
+    expect(() => buildAudioTranscriptionPayload(client.validate(request(parameters)))).toThrow(
+      GenerationValidationError,
+    );
+  });
+
+  it("keeps speaker labels on segments when the response carries them", () => {
+    expect(
+      parseAudioTranscriptionResponse({
+        text: "hello there",
+        duration: 3,
+        segments: [
+          { id: 0, start: 0, end: 1.5, text: "hello", speaker: "0" },
+          { id: 1, start: 1.6, end: 3, text: "there", speaker: "1" },
+        ],
+      }),
+    ).toEqual({
+      type: "text",
+      text: "hello there",
+      meta: {
+        duration: 3,
+        segments: [
+          { start: 0, end: 1.5, text: "hello", speaker: "0" },
+          { start: 1.6, end: 3, text: "there", speaker: "1" },
+        ],
+      },
+    });
+  });
+
+  it.each([{ speaker: "" }, { speaker: 0 }])("rejects malformed speaker label %j", (speaker) => {
+    expect(() =>
+      parseAudioTranscriptionResponse({
+        text: "hello",
+        duration: 1,
+        segments: [{ text: "hello", start: 0, end: 1, ...speaker }],
+      }),
+    ).toThrow();
+  });
 });

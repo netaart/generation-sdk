@@ -182,9 +182,11 @@ const result = await client.generateResult({
 console.log(result.content, result.requestId, result.cost);
 ```
 
-The adapter requests `verbose_json` and returns `{ type: "text", text, meta: { duration, segments } }`. Duration and segment `start`/`end` are in seconds; each segment also contains `text`. Empty transcripts are valid. `requestId` and `cost` follow the normal `generateResult` behavior and are included when the gateway supplies them.
+The adapter requests `verbose_json` and returns `{ type: "text", text, meta: { duration, segments } }`. Duration and segment `start`/`end` are in seconds; each segment also contains `text`. When `enable_speaker_info` is `true`, each segment also contains `speaker`, a string such as `"0"` or `"1"`. Empty transcripts are valid. `requestId` and `cost` follow the normal `generateResult` behavior and are included when the gateway supplies them.
 
 `audio_format` accepts `wav`, `mp3`, `ogg` or `raw`. It is inferred from the URL path extension when omitted; signed or extensionless URLs can specify it explicitly. `language` uses Volcengine codes such as `zh-CN` and `en-US`; omission retains the upstream defaults. The URL must remain accessible to Volcengine throughout processing. File uploads, base64, multiple audio blocks and realtime streaming are not supported by this model. Optional text content blocks are accepted and ignored, so callers can include a CLI prompt alongside the audio URL. Prompt text is never sent to the transcription service.
+
+`enable_speaker_info: true` requests speaker separation, which requires `language` to be unset or `zh-CN`. `ssd_version` selects the model: `"200"` (default) for general audio, or `"300"` for long meeting recordings. `ssd_mode` (`0` or `1`) is valid only with `ssd_version: "200"`; use `1` for long non-meeting audio. Speaker labels are distinct per recording and do not identify people by name.
 
 `max_wait` controls the SDK request timeout in seconds (default 330). It does not extend gateway limits: New API normally allows 300 seconds for transcription, while neta-router's generic upstream timeout defaults to 240 seconds. Configure the gateway for the expected recording workload. A client timeout does not cancel a submitted upstream job; the SDK does not automatically retry transcription requests.
 
