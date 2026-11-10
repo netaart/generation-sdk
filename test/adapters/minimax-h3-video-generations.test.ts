@@ -3,6 +3,7 @@ import {
   createGenerationClient,
   type GenerationContentBlock,
   type GenerationModelDeclaration,
+  type GenerationProviderError,
 } from "../../src/index.js";
 
 type FetchCall = { url: string; init: RequestInit };
@@ -159,6 +160,57 @@ describe("minimax.h3VideoGenerations adapter", () => {
         meta: { task_id: "task-1", status: "succeeded", progress: 100 },
       },
     ]);
+  });
+
+  it("fails on the first poll when NewAPI reports TIMEOUT and carries the fail reason", async () => {
+    vi.useFakeTimers();
+    const timeoutResponse = {
+      code: "success",
+      data: {
+        task_id: "task-1",
+        status: "TIMEOUT",
+        fail_reason: "任务超时（模型 minimax-h3，15分钟）",
+        progress: "100%",
+        data: { status: "failed" },
+      },
+    };
+    const calls: string[] = [];
+    const fetchMock = async (url: string | URL | Request) => {
+      calls.push(String(url));
+      if (String(url).endsWith("/v1/video/generations")) {
+        return new Response(JSON.stringify({ id: "task-1", status: "queued" }), { status: 200 });
+      }
+      return new Response(JSON.stringify(timeoutResponse), { status: 200 });
+    };
+
+    try {
+      const client = createGenerationClient({
+        apiKey: "key",
+        fetch: fetchMock as typeof fetch,
+        models: [h3Declaration],
+        includeBuiltinModels: false,
+      });
+      const rejection = expect(
+        client.generate({
+          model: h3Declaration.model,
+          content: [textBlock("a red cube rotating on a white table")],
+          parameters: { poll_interval: 1, max_wait: 30 },
+        }),
+      ).rejects.toMatchObject({
+        name: "GenerationProviderError",
+        message: "MiniMax H3 generation failed: 任务超时（模型 minimax-h3，15分钟）",
+        details: { taskId: "task-1", rawStatus: timeoutResponse },
+      } satisfies Partial<GenerationProviderError>);
+
+      await vi.advanceTimersByTimeAsync(31_000);
+      await rejection;
+      expect(calls).toEqual([
+        "https://router.neta.art/v1/video/generations",
+        "https://router.neta.art/v1/video/generations/task-1",
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("serializes image, video, and audio references and preserves the requested ratio", async () => {
