@@ -57,7 +57,9 @@ function normalizeStatus(value: unknown): string {
   if (["queued", "processing", "in_progress", "running", "submitted", "not_start"].includes(status)) {
     return "processing";
   }
-  if (["failure", "failed", "error", "cancelled", "canceled", "expired"].includes(status)) return "failed";
+  if (["failure", "failed", "error", "timeout", "cancelled", "canceled", "expired"].includes(status)) {
+    return "failed";
+  }
   return status || "unknown";
 }
 
