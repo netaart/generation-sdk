@@ -32,9 +32,13 @@ describe("config", () => {
 
   it("requires duration and declares the provider range for each Seedance generation", async () => {
     const client = createGenerationClient({ apiKey: "test" });
-    expect(client.getModel("seedance-2-5")?.parameters?.duration).toMatchObject({ min: 4, max: 30 });
-    expect(client.getModel("seedance-2-0")?.parameters?.duration).toMatchObject({ min: 4, max: 15 });
-    expect(client.getModel("seedance-2-0-fast")?.parameters?.duration).toMatchObject({ min: 4, max: 15 });
+    expect(client.getModel("seedance-2-5")?.parameters?.duration).toMatchObject({ min: 4, max: 30, values: [-1] });
+    expect(client.getModel("seedance-2-0")?.parameters?.duration).toMatchObject({ min: 4, max: 15, values: [-1] });
+    expect(client.getModel("seedance-2-0-fast")?.parameters?.duration).toMatchObject({
+      min: 4,
+      max: 15,
+      values: [-1],
+    });
 
     for (const model of ["seedance-2-5", "seedance-2-0", "seedance-2-0-fast"]) {
       const duration = client.getModel(model)?.parameters?.duration;
@@ -53,6 +57,49 @@ describe("config", () => {
     for (const model of ["seedance-2-5", "seedance-2-0", "seedance-2-0-fast"]) {
       expect(shipped.find((declaration) => declaration.model === model)?.parameters?.duration).toEqual(
         client.getModel(model)?.parameters?.duration,
+      );
+    }
+  });
+
+  it("parses media limits, requires, and extra numeric values and rejects malformed ones", () => {
+    const base = JSON.parse(JSON.stringify(createGenerationClient().getModel("seedance-2-0-fast"))) as Record<
+      string,
+      unknown
+    > & { content: { input: Array<Record<string, unknown>> }; parameters: Record<string, Record<string, unknown>> };
+    const parse = (value: unknown) => parseGenerationModelDeclaration(JSON.stringify(value), "custom.json");
+    const withInput = (type: string, patch: Record<string, unknown>) => ({
+      ...base,
+      content: { input: base.content.input.map((spec) => (spec.type === type ? { ...spec, ...patch } : spec)) },
+    });
+    const withDuration = (patch: Record<string, unknown>) => ({
+      ...base,
+      parameters: { ...base.parameters, duration: { ...base.parameters.duration, ...patch } },
+    });
+
+    expect(parse(base)).toEqual(base);
+    expect(parse(withInput("video", { media: { fps: { min: 23.8 } } })).content.input[2]?.media).toEqual({
+      fps: { min: 23.8 },
+    });
+
+    for (const invalid of [
+      withInput("audio", { media: { fps: { min: 24, max: 60 } } }),
+      withInput("image", { media: { duration: { max: 10 } } }),
+      withInput("text", { media: { maxBytes: 10 } }),
+      withInput("image", { media: {} }),
+      withInput("image", { media: { width: {} } }),
+      withInput("image", { media: { width: { min: 600, max: 300 } } }),
+      withInput("image", { media: { width: { min: "300" } } }),
+      withInput("image", { media: { width: { min: 300, step: 2 } } }),
+      withInput("image", { media: { maxBytes: 1.5 } }),
+      withInput("image", { media: { formats: [] } }),
+      withInput("audio", { requires: [] }),
+      withInput("audio", { requires: ["picture"] }),
+      withDuration({ values: [] }),
+      withDuration({ values: [1.5] }),
+      { ...base, parameters: { ...base.parameters, ratio: { ...base.parameters.ratio, values: [1] } } },
+    ]) {
+      expect(() => parse(invalid), JSON.stringify(invalid).slice(0, 2000)).toThrow(
+        "Invalid model declaration: custom.json",
       );
     }
   });

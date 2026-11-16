@@ -118,6 +118,7 @@ function seedanceVideoParameters(defaults: {
   resolutions?: string[];
   maxWait: number;
   maxDuration?: number;
+  ratioNote: string;
 }) {
   return {
     duration: {
@@ -126,7 +127,9 @@ function seedanceVideoParameters(defaults: {
       default: 5,
       min: 4,
       max: defaults.maxDuration ?? 15,
-      description: "Video duration in seconds.",
+      values: [-1],
+      description:
+        "Video duration in seconds, or -1 to let the model choose. When the prompt edits or extends the reference video, Seedance treats the task as video editing and requires -1.",
     },
     resolution: {
       type: "string",
@@ -140,7 +143,7 @@ function seedanceVideoParameters(defaults: {
       optional: true,
       default: "16:9",
       enum: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9", "adaptive"],
-      description: "Output aspect ratio. Use adaptive to let the model choose.",
+      description: `Output aspect ratio. Use adaptive to let the model choose. ${defaults.ratioNote}`,
     },
     seed: { type: "integer", optional: true, description: "Random seed for reproducibility." },
     camera_fixed: {
@@ -168,36 +171,86 @@ function seedanceVideoParameters(defaults: {
   } satisfies GenerationModelDeclaration["parameters"];
 }
 
-const seedanceContentInput = [
-  { type: "text", required: true, min: 1, max: 16, merge: "newline", description: "Video prompt." },
-  {
-    type: "image",
-    required: false,
-    max: 9,
-    sources: ["url"],
-    roles: ["first_frame", "last_frame", "reference_image"],
-    description: "Optional public URL image input. Use meta.role as first_frame, last_frame, or reference_image.",
-  },
-  {
-    type: "video",
-    required: false,
-    max: 1,
-    sources: ["url"],
-    roles: ["reference_video"],
-    roleRequired: true,
-    description: "Optional public URL reference video input. Use meta.role as reference_video.",
-  },
-  {
-    type: "audio",
-    required: false,
-    max: 3,
-    sources: ["url"],
-    roles: ["reference_audio"],
-    roleRequired: true,
-    description:
-      "Optional public URL reference audio. Use meta.role reference_audio. Audio cannot be the only media input; include at least one image or video.",
-  },
-] satisfies GenerationModelDeclaration["content"]["input"];
+// 上游登记素材时的限制，数值取自上游报错里的真实阈值（帧率 23.8–60、时长 1.8–30.2 秒）
+const seedanceImageMedia = {
+  formats: ["jpeg", "png", "webp", "bmp", "tiff", "gif", "heic", "heif"],
+  maxBytes: 30 * 1024 * 1024,
+  width: { min: 300, max: 6000 },
+  height: { min: 300, max: 6000 },
+  aspectRatio: { min: 0.4, max: 2.5 },
+};
+
+function seedanceContentInput(limits: {
+  images: number;
+  videos: number;
+  audios: number;
+  /** Longest reference video or audio, and the longest total of each, in seconds. */
+  mediaSeconds: number;
+  audioOnly: boolean;
+}) {
+  const seconds = { min: 1.8, max: limits.mediaSeconds };
+  const total = { max: limits.mediaSeconds };
+  const shownSeconds = Math.floor(limits.mediaSeconds);
+  return [
+    { type: "text", required: true, min: 1, max: 16, merge: "newline", description: "Video prompt." },
+    {
+      type: "image",
+      required: false,
+      max: limits.images,
+      sources: ["url"],
+      roles: ["first_frame", "last_frame", "reference_image"],
+      media: seedanceImageMedia,
+      description:
+        "Optional public URL image input. Use meta.role as first_frame, last_frame, or reference_image; a last_frame needs a first_frame. Each image must be jpeg, png, webp, bmp, tiff, gif, heic, or heif, under 30 MB, with width and height between 300 and 6000 px and an aspect ratio (width/height) between 0.4 and 2.5.",
+    },
+    {
+      type: "video",
+      required: false,
+      max: limits.videos,
+      sources: ["url"],
+      roles: ["reference_video"],
+      roleRequired: true,
+      media: {
+        formats: ["mp4", "mov"],
+        maxBytes: 200 * 1024 * 1024,
+        width: { min: 300, max: 6000 },
+        height: { min: 300, max: 6000 },
+        aspectRatio: { min: 0.4, max: 2.5 },
+        pixels: { min: 407696, max: 8295044 },
+        fps: { min: 23.8, max: 60 },
+        duration: seconds,
+        totalDuration: total,
+      },
+      description: `Optional public URL reference video input. Use meta.role as reference_video. Not accepted with first_frame/last_frame. Each video must be mp4 or mov, at most 200 MB, 2–${shownSeconds} s long, and 24–60 fps, with width and height between 300 and 6000 px, an aspect ratio (width/height) between 0.4 and 2.5, and width × height between 407,696 and 8,295,044 pixels (854×480 passes, 640×480 does not)${
+        limits.videos > 1 ? `; all videos together at most ${shownSeconds} s` : ""
+      }. Re-encode slow-motion or high-refresh recordings at a constant 24 or 30 fps first.`,
+    },
+    {
+      type: "audio",
+      required: false,
+      max: limits.audios,
+      sources: ["url"],
+      roles: ["reference_audio"],
+      roleRequired: true,
+      ...(limits.audioOnly ? {} : { requires: ["image", "video"] }),
+      media: { formats: ["wav", "mp3"], maxBytes: 15 * 1024 * 1024, duration: seconds, totalDuration: total },
+      description: `Optional public URL reference audio. Use meta.role reference_audio. Not accepted with first_frame/last_frame. ${
+        limits.audioOnly
+          ? "Audio can be the only media input."
+          : "Audio cannot be the only media input; include at least one image or video."
+      } Each clip must be wav or mp3, at most 15 MB, and 2–${shownSeconds} s long; all clips together at most ${shownSeconds} s.`,
+    },
+  ] satisfies GenerationModelDeclaration["content"]["input"];
+}
+
+const seedance2ContentInput = seedanceContentInput({
+  images: 9,
+  videos: 1,
+  audios: 3,
+  mediaSeconds: 15.2,
+  audioOnly: false,
+});
+const seedance2RatioNote = "Video editing requires adaptive.";
 
 const minimaxH3ContentInput = [
   { type: "text", required: true, min: 1, max: 16, merge: "newline", description: "Video prompt." },
@@ -2143,8 +2196,8 @@ const builtinModels = [
       "High-quality video generation model that accepts text, image, video, and audio inputs. Supports resolutions from 480p to 4k and is well suited to final deliverables.",
     pricing: seedanceTokenPricing(2.4, 7.7),
     adapter: { type: "ark.videoGenerations" },
-    content: { input: seedanceContentInput },
-    parameters: seedanceVideoParameters({ resolution: "1080p", maxWait: 900 }),
+    content: { input: seedance2ContentInput },
+    parameters: seedanceVideoParameters({ resolution: "1080p", maxWait: 900, ratioNote: seedance2RatioNote }),
     examples: [
       {
         title: "Text to video",
@@ -2170,8 +2223,13 @@ const builtinModels = [
       "Fast video generation model that accepts text, image, video, and audio inputs. Faster and less expensive than seedance-2-0, making it well suited to creative validation and draft iteration.",
     pricing: seedanceTokenPricing(3.3, 5.6),
     adapter: { type: "ark.videoGenerations" },
-    content: { input: seedanceContentInput },
-    parameters: seedanceVideoParameters({ resolution: "720p", resolutions: ["480p", "720p"], maxWait: 600 }),
+    content: { input: seedance2ContentInput },
+    parameters: seedanceVideoParameters({
+      resolution: "720p",
+      resolutions: ["480p", "720p"],
+      maxWait: 600,
+      ratioNote: seedance2RatioNote,
+    }),
     examples: [
       {
         title: "Text to video",
@@ -2197,13 +2255,25 @@ const builtinModels = [
       "Seedance 2.5 video generation with text, image, video, and audio inputs. Supports 480p to 1080p. Priced above Seedance 2.0 on BytePlus list USD; 4K is not offered.",
     pricing: seedanceTokenPricing(6.4, 11.7),
     adapter: { type: "ark.videoGenerations" },
-    content: { input: seedanceContentInput },
-    parameters: seedanceVideoParameters({
-      resolution: "1080p",
-      resolutions: ["480p", "720p", "1080p"],
-      maxDuration: 30,
-      maxWait: 900,
-    }),
+    content: {
+      input: seedanceContentInput({ images: 30, videos: 10, audios: 10, mediaSeconds: 30.2, audioOnly: true }),
+    },
+    parameters: {
+      ...seedanceVideoParameters({
+        resolution: "1080p",
+        resolutions: ["480p", "720p", "1080p"],
+        maxDuration: 30,
+        maxWait: 900,
+        ratioNote: "First/last-frame tasks and video editing require adaptive.",
+      }),
+      video_mode: {
+        type: "string",
+        optional: true,
+        enum: ["reference", "edit", "extend"],
+        description:
+          "Required when reference_video content is supplied. Use reference to generate a new video using the supplied videos as references, edit to modify the supplied video, or extend to continue it. Edit and extend require duration=-1 and ratio=adaptive. SDK validation only; the provider determines the task from the prompt.",
+      },
+    },
     examples: [
       {
         title: "Text to video",

@@ -529,7 +529,28 @@ const output = await client.generate({
 });
 ```
 
-Seedance frame and reference media video modes use `meta.role` with public URL media sources:
+Seedance `duration` accepts 4 to 15 seconds (4 to 30 on `seedance-2-5`), or `-1` to let the model choose. When the prompt edits or extends the reference video, Seedance treats the task as video editing and requires `duration: -1` and `ratio: "adaptive"`.
+
+Every `seedance-2-5` request with `reference_video` content must explicitly set `parameters.video_mode`:
+
+- `"reference"`: generate a new video using the supplied videos as references; fixed duration and ratio are allowed.
+- `"edit"`: modify the supplied video; explicitly set `duration: -1` and `ratio: "adaptive"`.
+- `"extend"`: continue the supplied video; explicitly set `duration: -1` and `ratio: "adaptive"`.
+
+`validate()`, `generate()`, and `generateResult()` reject missing modes and invalid edit/extend parameters with `GenerationValidationError` before reading media or contacting the provider. Existing Seedance 2.5 reference-video callers must add `video_mode`. This parameter records the caller's intent for SDK validation; it is not sent to the provider, which determines the task from the prompt. The prompt must describe the selected operation.
+
+```ts
+await client.generate({
+  model: "seedance-2-5",
+  content: [
+    { type: "text", text: "Edit the supplied video: keep the shots and dialogue, improve the lighting." },
+    { type: "video", source: { type: "url", url: "https://example.com/source.mp4" }, meta: { role: "reference_video" } },
+  ],
+  parameters: { video_mode: "edit", duration: -1, ratio: "adaptive", resolution: "1080p" },
+});
+```
+
+Seedance frame and reference media video modes use `meta.role` with public URL media sources. A request uses one mode: a single plain image, `first_frame` with an optional `last_frame`, or reference media (`reference_image`, `reference_video`, `reference_audio`). A `last_frame` needs a `first_frame`, and `first_frame`/`last_frame` cannot be combined with reference video or audio. On `seedance-2-5`, first/last-frame tasks require `ratio: "adaptive"`:
 
 ```ts
 await client.generate({
@@ -553,7 +574,7 @@ await client.generate({
 });
 ```
 
-Seedance reference audio uses a public URL and `meta.role: "reference_audio"`. Audio cannot be the only media input; include at least one image or video in the same request:
+Seedance reference audio uses a public URL and `meta.role: "reference_audio"`. On `seedance-2-0` and `seedance-2-0-fast`, audio cannot be the only media input; include at least one image or video in the same request. `seedance-2-5` accepts audio on its own:
 
 ```ts
 await client.generate({
@@ -565,6 +586,16 @@ await client.generate({
   ],
 });
 ```
+
+Before it calls the provider, `generate()` reads every Seedance image, video, and audio input and checks it against the model's `media` limits: format, file size, width, height, aspect ratio, pixel count, frame rate, and duration. Video files are read with HTTP Range requests up to the `moov` box, so a long clip costs a few hundred kilobytes. A file outside the limits throws `GenerationValidationError` that names the content block, the measured value, the limit, and the fix:
+
+```text
+reference_video (content[2]): frame rate 120 fps is outside 23.8–60 fps; re-encode it at a constant 24 or 30 fps
+```
+
+A URL that answers 4xx is invalid input and also throws `GenerationValidationError`. A network failure, a timeout, or a 408/429/5xx reply throws `GenerationMediaReadError`, which the caller can retry. `validate()` checks the request structure only and never reads media.
+
+Media is read with `publicMediaFetch`, which connects only to public unicast addresses: it refuses loopback, private, link-local, carrier-grade NAT, and cloud metadata addresses, both when the URL names an IP address and when DNS resolves to one, and it checks every redirect. Pass `mediaFetch` to `createGenerationClient()` to read media another way, for example through a proxy.
 
 Kling exposes stable capability model ids while the adapter sends the latest upstream `model_name` for each capability:
 
@@ -851,7 +882,8 @@ parameters:
 ```
 
 Parameter specs have `type` `string`, `number`, `integer`, `boolean`, or `array`. Numbers and integers accept `min`,
-`max`, and `multipleOf`. An array declares `items`, either a string with an optional `enum` or an integer with optional
+`max`, and `multipleOf`, plus `values`, a list of exact values accepted outside that range (Seedance declares
+`values: [-1]` on `duration` for a model-chosen length). An array declares `items`, either a string with an optional `enum` or an integer with optional
 `min` and `max`, plus optional `min` and `max` item counts and `unique`.
 
 A model with several functions declares them in `operations`, and its string parameter `operation` selects one per
@@ -920,6 +952,27 @@ type GenerationSource =
 
 The content block `type` selects the media kind (`image`, `video`, `audio`, or `3d`). The source `type` selects how that media is supplied (`url` or `base64`). When a model declares `roles`, `meta.role` selects the media's provider-specific purpose. When it also sets `roleRequired`, that role must be present.
 
+A content input may declare `requires`, a list of other content types of which at least one must be present whenever
+this type is used, and `media`, the limits `generate()` checks on each file before calling the provider. Every range
+is inclusive and may omit either side:
+
+```yaml
+- type: audio
+  max: 3
+  requires: [image, video]
+  media:
+    formats: [wav, mp3]
+    maxBytes: 15728640
+    duration: { min: 1.8, max: 15.2 }
+    totalDuration: { max: 15.2 }
+```
+
+Images accept `formats`, `maxBytes`, `width`, `height`, `aspectRatio` (width divided by height), and `pixels` (width
+times height). Videos accept those plus `fps`, `duration`, and `totalDuration` (all videos in the request). Audio
+accepts `formats`, `maxBytes`, `duration`, and `totalDuration`. Format names are lowercase and read from the file
+contents, never from the URL: for example `jpeg`, `png`, `webp`, `bmp`, `tiff`, `gif`, `heic`, `heif`, `mp4`, `mov`,
+`wav`, and `mp3`.
+
 ## Adapter types
 
 Built-in adapters:
@@ -962,6 +1015,7 @@ console.log(resolved.parameters);
 
 ```ts
 import {
+  GenerationMediaReadError,
   GenerationProviderError,
   GenerationTransportError,
   GenerationValidationError,
@@ -972,6 +1026,8 @@ try {
 } catch (error) {
   if (error instanceof GenerationValidationError) {
     console.error("Invalid request", error.message);
+  } else if (error instanceof GenerationMediaReadError) {
+    console.error("Could not read an input file", error.message);
   } else if (error instanceof GenerationTransportError) {
     console.error("Provider transport failed", error.message);
     console.error(error.details?.causeCode, error.details?.causeSyscall);

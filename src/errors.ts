@@ -19,6 +19,17 @@ export class GenerationValidationError extends GenerationError {
   }
 }
 
+/** A reference media file could not be read for a reason outside the request: network failure, timeout, or a 5xx/408/429 reply. */
+export class GenerationMediaReadError extends GenerationError {
+  constructor(message: string, cause?: unknown) {
+    super(message);
+    this.name = "GenerationMediaReadError";
+    this.cause = cause;
+  }
+
+  declare cause: unknown;
+}
+
 export class GenerationUnsupportedAdapterError extends GenerationError {
   constructor(adapterType: string) {
     super(`Unsupported generation adapter: ${adapterType}`);

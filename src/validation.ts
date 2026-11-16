@@ -58,6 +58,11 @@ export function validateGenerationContent(
       throw new GenerationValidationError(`Expected at least ${spec.min} ${spec.type} content block(s)`);
     if (spec.max !== undefined && count > spec.max)
       throw new GenerationValidationError(`Expected at most ${spec.max} ${spec.type} content block(s)`);
+    if (count > 0 && spec.requires && !spec.requires.some((type) => (counts.get(type) ?? 0) > 0)) {
+      throw new GenerationValidationError(
+        `${declaration.model} ${spec.type} input requires at least one ${spec.requires.join(" or ")} content block`,
+      );
+    }
   }
 }
 
@@ -203,13 +208,15 @@ function validateSpecValue(
 
 function validateNumberRange(
   label: string,
-  spec: { min?: number; max?: number; multipleOf?: number },
+  spec: { min?: number; max?: number; multipleOf?: number; values?: number[] },
   value: number,
 ): void {
+  if (spec.values?.includes(value)) return;
+  const alsoValues = spec.values ? ` or one of: ${spec.values.join(", ")}` : "";
   if (spec.min !== undefined && value < spec.min)
-    throw new GenerationValidationError(`${label} must be >= ${spec.min}`);
+    throw new GenerationValidationError(`${label} must be >= ${spec.min}${alsoValues}`);
   if (spec.max !== undefined && value > spec.max)
-    throw new GenerationValidationError(`${label} must be <= ${spec.max}`);
+    throw new GenerationValidationError(`${label} must be <= ${spec.max}${alsoValues}`);
   if (spec.multipleOf !== undefined) {
     const steps = value / spec.multipleOf;
     if (Math.abs(steps - Math.round(steps)) > 1e-9)

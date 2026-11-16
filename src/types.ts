@@ -32,6 +32,8 @@ export type GenerationModelPricing = {
   note?: string;
 } & ({ amount: number; min?: never; max?: never } | { amount?: never; min: number; max: number });
 
+export const GENERATION_CONTENT_TYPES = ["text", "image", "video", "audio", "3d"] as const;
+
 export type GenerationSource = { type: "url"; url: string } | { type: "base64"; mediaType: string; data: string };
 
 export type GenerationContentBlockMeta = Record<string, unknown>;
@@ -62,6 +64,34 @@ export type DecisionsResultWithMetadata = {
   cost?: number;
 };
 
+/** Inclusive bounds; either side may be omitted. */
+export type GenerationRange = { min?: number; max?: number };
+
+/**
+ * Limits the provider puts on each media file of one content type. `generate()` reads every image, video, and audio
+ * block whose content spec declares `media` and rejects files outside these limits before calling the adapter.
+ */
+export type GenerationMediaSpec = {
+  /** Accepted file formats, for example jpeg, png, webp, bmp, tiff, gif, heic, heif, mp4, mov, wav, mp3. */
+  formats?: string[];
+  /** Largest accepted file size in bytes. */
+  maxBytes?: number;
+  /** Image and video width in pixels. */
+  width?: GenerationRange;
+  /** Image and video height in pixels. */
+  height?: GenerationRange;
+  /** Image and video width divided by height. */
+  aspectRatio?: GenerationRange;
+  /** Image and video width multiplied by height. */
+  pixels?: GenerationRange;
+  /** Video frames per second. */
+  fps?: GenerationRange;
+  /** Seconds of one video or audio file. */
+  duration?: GenerationRange;
+  /** Seconds of all video or audio files of this content type in one request. */
+  totalDuration?: GenerationRange;
+};
+
 export type GenerationContentSpec = {
   type: GenerationContentBlock["type"];
   required?: boolean;
@@ -70,6 +100,9 @@ export type GenerationContentSpec = {
   sources?: Array<GenerationSource["type"]>;
   roles?: string[];
   roleRequired?: boolean;
+  /** Blocks of this type need at least one block of one of these types in the same request. */
+  requires?: Array<GenerationContentBlock["type"]>;
+  media?: GenerationMediaSpec;
   merge?: "newline" | "space" | "concat";
   meta?: Record<string, unknown>;
   description?: string;
@@ -100,6 +133,8 @@ export type GenerationParameterSpec =
       max?: number;
       /** Values must be whole multiples of this step, for example 0.5. */
       multipleOf?: number;
+      /** Exact values accepted in addition to the min/max range, for example -1 for a provider-chosen value. */
+      values?: number[];
       description?: string;
       examples?: number[];
     }
@@ -110,6 +145,8 @@ export type GenerationParameterSpec =
       min?: number;
       max?: number;
       multipleOf?: number;
+      /** Exact values accepted in addition to the min/max range, for example -1 for a provider-chosen value. */
+      values?: number[];
       description?: string;
       examples?: number[];
     }
@@ -266,6 +303,18 @@ export type GenerationDebugConfig = GenerationDebugOptions & {
   logger: GenerationDebugLogger;
 };
 
+/** Response fields the media reader uses; the global and undici fetch responses both provide them. */
+export type GenerationMediaResponse = {
+  status: number;
+  headers: { get(name: string): string | null };
+  body: AsyncIterable<Uint8Array> | null;
+};
+
+export type GenerationMediaFetch = (
+  url: string,
+  init: { headers: Record<string, string>; signal: AbortSignal },
+) => Promise<GenerationMediaResponse>;
+
 export type GenerationAdapterContext = {
   apiKey: string;
   baseUrl: string;
@@ -290,6 +339,11 @@ export type CreateGenerationClientOptions = {
   sourceResolver?: GenerationSourceResolver;
   adapters?: Record<string, GenerationAdapter>;
   debug?: boolean | GenerationDebugOptions;
+  /**
+   * Reads reference media for the declared `media` limits. Defaults to a fetch that only connects to public addresses
+   * and checks every redirect.
+   */
+  mediaFetch?: GenerationMediaFetch;
   /** Official TypeSafe SDK settings. Uses apiKey and fetch from this generation client. */
   systemOne?: Omit<TypeSafeClientConfig, "apiKey" | "fetch">;
   /** Official OpenRouter SDK settings for decisions(). Uses apiKey and fetch from this generation client; serverURL is the Decisions API root and defaults to `${baseUrl}/openrouter`. */

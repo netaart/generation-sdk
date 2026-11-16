@@ -1,7 +1,13 @@
 import { GenerationProviderError, GenerationTimeoutError, GenerationValidationError } from "../errors.js";
 import { fetchWithTimeout, joinUrl } from "../http.js";
 import { taskPollTicks } from "../task-poll.js";
-import type { GenerationAdapterInput, GenerationContentBlock, GenerationSource } from "../types.js";
+import type {
+  GenerationAdapter,
+  GenerationAdapterInput,
+  GenerationContentBlock,
+  GenerationSource,
+  ResolvedGenerationRequest,
+} from "../types.js";
 import { compactObject, getBlockMeta } from "../utils.js";
 import { mergeTextBlocks } from "../validation.js";
 
@@ -41,8 +47,6 @@ type ResolvedMedia = { kind: MediaKind; url: string; role: string | undefined };
 type VisualInputMedia = InputMedia & { kind: VisualKind };
 type VisualResolvedMedia = ResolvedMedia & { kind: VisualKind };
 
-const MAX_REFERENCE_AUDIO = 3;
-
 function asString(value: unknown): string | undefined {
   return typeof value === "string" && value ? value : undefined;
 }
@@ -59,39 +63,51 @@ function isSeedance25Model(model: string): boolean {
   return /seedance[-_.]?2[-_.]?5/i.test(model);
 }
 
-function seedance25LockedRatioKind(
-  mode: MediaMode | null,
-  parameters: Record<string, unknown>,
-  requestParameters: Record<string, unknown> | undefined,
-  meta: Record<string, unknown>,
-): "first/last-frame" | "edit" | "extend" | null {
-  if (mode === "frame") return "first/last-frame";
-  const taskType =
-    asString(requestParameters?.omni_reference_task_type) ??
-    asString(parameters.omni_reference_task_type) ??
-    asString(meta.omni_reference_task_type) ??
-    asString(requestParameters?.task_type) ??
-    asString(parameters.task_type) ??
-    asString(meta.task_type);
-  if (taskType === "edit") return "edit";
-  if (taskType === "extend") return "extend";
-  return null;
-}
-
+// Seedance 2.5 的首帧和首尾帧任务只接受 adaptive；2.0 和 fast 的首帧任务可以指定固定比例。
 function resolveRatio(
   model: string,
   mode: MediaMode | null,
   parameters: Record<string, unknown>,
   requestParameters: Record<string, unknown> | undefined,
-  meta: Record<string, unknown>,
 ): string {
   const requested = asString(requestParameters?.ratio);
-  const locked = isSeedance25Model(model) ? seedance25LockedRatioKind(mode, parameters, requestParameters, meta) : null;
-  if (!locked) return requested ?? asString(parameters.ratio) ?? "16:9";
+  if (!(isSeedance25Model(model) && mode === "frame")) return requested ?? asString(parameters.ratio) ?? "16:9";
   if (requested !== undefined && requested !== "adaptive") {
-    throw new GenerationValidationError(`Seedance 2.5 ${locked} tasks require ratio=adaptive, got "${requested}"`);
+    throw new GenerationValidationError(
+      `Seedance 2.5 first/last-frame tasks require ratio=adaptive, got "${requested}"`,
+    );
   }
   return "adaptive";
+}
+
+function validateVideoMode(input: ResolvedGenerationRequest, media: InputMedia[]): void {
+  if (!isSeedance25Model(input.declaration.model)) return;
+
+  const videoMode = input.parameters.video_mode;
+  const hasVideo = media.some((item) => item.kind === "video");
+  if (!hasVideo) {
+    if (videoMode !== undefined) {
+      throw new GenerationValidationError("Seedance 2.5 video_mode requires reference_video content");
+    }
+    return;
+  }
+  if (videoMode !== "reference" && videoMode !== "edit" && videoMode !== "extend") {
+    throw new GenerationValidationError(
+      'Seedance 2.5 reference_video requires parameters.video_mode: "reference" for generating a new video, "edit" for editing the supplied video, or "extend" for continuing it; edit and extend require duration=-1 and ratio=adaptive',
+    );
+  }
+  if (videoMode === "reference") return;
+
+  if (input.parameters.duration !== -1) {
+    throw new GenerationValidationError(
+      `Seedance 2.5 video_mode=${videoMode} requires duration=-1 (automatic duration), got ${String(input.parameters.duration)}; set parameters.duration to -1`,
+    );
+  }
+  if (input.parameters.ratio !== "adaptive") {
+    throw new GenerationValidationError(
+      `Seedance 2.5 video_mode=${videoMode} requires ratio=adaptive, got "${String(input.parameters.ratio)}"; set parameters.ratio to "adaptive"`,
+    );
+  }
 }
 
 function normalizeStatus(value: string): string {
@@ -119,17 +135,17 @@ function isVisualResolved(item: ResolvedMedia): item is VisualResolvedMedia {
   return item.kind === "image" || item.kind === "video";
 }
 
-function validateAudioInputs(audio: InputMedia[], visual: InputMedia[]): void {
+// 音频的数量和是否必须搭配图片或视频由模型声明的 max 和 requires 决定。
+function validateAudioInputs(audio: InputMedia[], mode: MediaMode | null): void {
   for (const item of audio) {
     if (item.role !== "reference_audio") {
       throw new GenerationValidationError("Audio input must use meta.role reference_audio");
     }
   }
-  if (audio.length > MAX_REFERENCE_AUDIO) {
-    throw new GenerationValidationError(`Seedance supports at most ${MAX_REFERENCE_AUDIO} reference_audio files`);
-  }
-  if (audio.length > 0 && visual.length === 0) {
-    throw new GenerationValidationError("Seedance audio input requires at least one image or video");
+  if (audio.length > 0 && mode === "frame") {
+    throw new GenerationValidationError(
+      "Seedance does not accept reference_audio with first_frame/last_frame; use reference_image instead, or drop the audio",
+    );
   }
 }
 
@@ -176,13 +192,13 @@ function classifyMedia(media: VisualInputMedia[]): MediaMode | null {
     throw new GenerationValidationError(
       "Cannot mix video media modes: use only plain image, first_frame/last_frame, or reference_image/reference_video",
     );
-  if (hasReference) {
-    assertSingleRole(media, "reference_video", "Reference mode supports at most one reference_video");
-    return "reference";
-  }
+  if (hasReference) return "reference";
   if (hasFrame) {
     assertSingleRole(media, "first_frame", "Frame mode supports at most one first_frame image");
     assertSingleRole(media, "last_frame", "Frame mode supports at most one last_frame image");
+    if (!media.some((item) => item.role === "first_frame")) {
+      throw new GenerationValidationError("A last_frame image needs a first_frame image in the same request");
+    }
     return "frame";
   }
   if (hasPlain) {
@@ -298,7 +314,7 @@ async function requestJson(input: GenerationAdapterInput, path: string, init: Re
   return response.json();
 }
 
-export async function arkVideoGenerationsAdapter(input: GenerationAdapterInput): Promise<GenerationContentBlock[]> {
+function planRequest(input: ResolvedGenerationRequest) {
   const prompt = mergeTextBlocks(input.declaration, input.request.content);
   if (!prompt) throw new GenerationValidationError("Prompt text is required");
 
@@ -311,12 +327,18 @@ export async function arkVideoGenerationsAdapter(input: GenerationAdapterInput):
     source: block.source,
     role: getMediaRole(block),
   }));
-  const visualInput = inputMedia.filter(isVisualMedia);
-  const audioInput = inputMedia.filter((item) => item.kind === "audio");
-  validateAudioInputs(audioInput, visualInput);
+  const mode = classifyMedia(inputMedia.filter(isVisualMedia));
+  validateAudioInputs(
+    inputMedia.filter((item) => item.kind === "audio"),
+    mode,
+  );
+  validateVideoMode(input, inputMedia);
+  const ratio = resolveRatio(input.declaration.model, mode, input.parameters, input.request.parameters);
+  return { prompt, inputMedia, mode, ratio };
+}
 
-  const mode = classifyMedia(visualInput);
-  const ratio = resolveRatio(input.declaration.model, mode, input.parameters, input.request.parameters, input.meta);
+async function generateArkVideo(input: GenerationAdapterInput): Promise<GenerationContentBlock[]> {
+  const { prompt, inputMedia, mode, ratio } = planRequest(input);
   const media = await resolveMedia(input, inputMedia);
   const visual = media.filter(isVisualResolved);
   const audio = media.filter((item) => item.kind === "audio");
@@ -389,3 +411,10 @@ export async function arkVideoGenerationsAdapter(input: GenerationAdapterInput):
 
   throw new GenerationTimeoutError("Timed out waiting for video generation", { taskId });
 }
+
+// 组合规则只看请求结构，在 validate() 里执行，调用方提交时就能拒绝。
+export const arkVideoGenerationsAdapter: GenerationAdapter = Object.assign(generateArkVideo, {
+  validate: (input: ResolvedGenerationRequest) => {
+    planRequest(input);
+  },
+});
