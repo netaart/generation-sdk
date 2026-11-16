@@ -88,6 +88,11 @@ parameters:
     default: "16:9"
     enum: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9", adaptive]
     description: Output aspect ratio. Use adaptive to let the model choose. First/last-frame tasks and video editing require adaptive.
+  video_mode:
+    type: string
+    optional: true
+    enum: [reference, edit, extend]
+    description: Required when reference_video content is supplied. Use reference to generate a new video using the supplied videos as references, edit to modify the supplied video, or extend to continue it. Edit and extend require duration=-1 and ratio=adaptive. SDK validation only; the provider determines the task from the prompt.
   seed:
     type: integer
     optional: true

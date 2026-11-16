@@ -531,6 +531,25 @@ const output = await client.generate({
 
 Seedance `duration` accepts 4 to 15 seconds (4 to 30 on `seedance-2-5`), or `-1` to let the model choose. When the prompt edits or extends the reference video, Seedance treats the task as video editing and requires `duration: -1` and `ratio: "adaptive"`.
 
+Every `seedance-2-5` request with `reference_video` content must explicitly set `parameters.video_mode`:
+
+- `"reference"`: generate a new video using the supplied videos as references; fixed duration and ratio are allowed.
+- `"edit"`: modify the supplied video; explicitly set `duration: -1` and `ratio: "adaptive"`.
+- `"extend"`: continue the supplied video; explicitly set `duration: -1` and `ratio: "adaptive"`.
+
+`validate()`, `generate()`, and `generateResult()` reject missing modes and invalid edit/extend parameters with `GenerationValidationError` before reading media or contacting the provider. Existing Seedance 2.5 reference-video callers must add `video_mode`. This parameter records the caller's intent for SDK validation; it is not sent to the provider, which determines the task from the prompt. The prompt must describe the selected operation.
+
+```ts
+await client.generate({
+  model: "seedance-2-5",
+  content: [
+    { type: "text", text: "Edit the supplied video: keep the shots and dialogue, improve the lighting." },
+    { type: "video", source: { type: "url", url: "https://example.com/source.mp4" }, meta: { role: "reference_video" } },
+  ],
+  parameters: { video_mode: "edit", duration: -1, ratio: "adaptive", resolution: "1080p" },
+});
+```
+
 Seedance frame and reference media video modes use `meta.role` with public URL media sources. A request uses one mode: a single plain image, `first_frame` with an optional `last_frame`, or reference media (`reference_image`, `reference_video`, `reference_audio`). A `last_frame` needs a `first_frame`, and `first_frame`/`last_frame` cannot be combined with reference video or audio. On `seedance-2-5`, first/last-frame tasks require `ratio: "adaptive"`:
 
 ```ts

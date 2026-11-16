@@ -80,6 +80,36 @@ function resolveRatio(
   return "adaptive";
 }
 
+function validateVideoMode(input: ResolvedGenerationRequest, media: InputMedia[]): void {
+  if (!isSeedance25Model(input.declaration.model)) return;
+
+  const videoMode = input.parameters.video_mode;
+  const hasVideo = media.some((item) => item.kind === "video");
+  if (!hasVideo) {
+    if (videoMode !== undefined) {
+      throw new GenerationValidationError("Seedance 2.5 video_mode requires reference_video content");
+    }
+    return;
+  }
+  if (videoMode !== "reference" && videoMode !== "edit" && videoMode !== "extend") {
+    throw new GenerationValidationError(
+      'Seedance 2.5 reference_video requires parameters.video_mode: "reference" for generating a new video, "edit" for editing the supplied video, or "extend" for continuing it; edit and extend require duration=-1 and ratio=adaptive',
+    );
+  }
+  if (videoMode === "reference") return;
+
+  if (input.parameters.duration !== -1) {
+    throw new GenerationValidationError(
+      `Seedance 2.5 video_mode=${videoMode} requires duration=-1 (automatic duration), got ${String(input.parameters.duration)}; set parameters.duration to -1`,
+    );
+  }
+  if (input.parameters.ratio !== "adaptive") {
+    throw new GenerationValidationError(
+      `Seedance 2.5 video_mode=${videoMode} requires ratio=adaptive, got "${String(input.parameters.ratio)}"; set parameters.ratio to "adaptive"`,
+    );
+  }
+}
+
 function normalizeStatus(value: string): string {
   const status = value.toLowerCase();
   return status === "success" ? "succeeded" : status;
@@ -302,6 +332,7 @@ function planRequest(input: ResolvedGenerationRequest) {
     inputMedia.filter((item) => item.kind === "audio"),
     mode,
   );
+  validateVideoMode(input, inputMedia);
   const ratio = resolveRatio(input.declaration.model, mode, input.parameters, input.request.parameters);
   return { prompt, inputMedia, mode, ratio };
 }

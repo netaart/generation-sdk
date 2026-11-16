@@ -2258,13 +2258,22 @@ const builtinModels = [
     content: {
       input: seedanceContentInput({ images: 30, videos: 10, audios: 10, mediaSeconds: 30.2, audioOnly: true }),
     },
-    parameters: seedanceVideoParameters({
-      resolution: "1080p",
-      resolutions: ["480p", "720p", "1080p"],
-      maxDuration: 30,
-      maxWait: 900,
-      ratioNote: "First/last-frame tasks and video editing require adaptive.",
-    }),
+    parameters: {
+      ...seedanceVideoParameters({
+        resolution: "1080p",
+        resolutions: ["480p", "720p", "1080p"],
+        maxDuration: 30,
+        maxWait: 900,
+        ratioNote: "First/last-frame tasks and video editing require adaptive.",
+      }),
+      video_mode: {
+        type: "string",
+        optional: true,
+        enum: ["reference", "edit", "extend"],
+        description:
+          "Required when reference_video content is supplied. Use reference to generate a new video using the supplied videos as references, edit to modify the supplied video, or extend to continue it. Edit and extend require duration=-1 and ratio=adaptive. SDK validation only; the provider determines the task from the prompt.",
+      },
+    },
     examples: [
       {
         title: "Text to video",

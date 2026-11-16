@@ -292,7 +292,7 @@ describe("ark.videoGenerations adapter", () => {
         videoBlock(video(), { role: "reference_video" }),
         videoBlock(video("video-854x480-23.976fps-moov-end.mp4"), { role: "reference_video" }),
       ],
-      {},
+      { video_mode: "reference" },
       "seedance-2-5",
     );
     const metadata = parseCreateBody(calls).metadata as Record<string, unknown>;
