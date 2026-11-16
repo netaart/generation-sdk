@@ -3,6 +3,7 @@ import { extname, join } from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { GenerationConfigError } from "./errors.js";
 import {
+  GENERATION_CONTENT_TYPES,
   GENERATION_MODEL_CATEGORIES,
   GENERATION_PRICING_UNITS,
   type GenerationModelCategory,
@@ -39,6 +40,69 @@ function isPositiveNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
 }
 
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function isRange(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  const { min, max, ...rest } = value;
+  return (
+    Object.keys(rest).length === 0 &&
+    (min !== undefined || max !== undefined) &&
+    (min === undefined || isFiniteNumber(min)) &&
+    (max === undefined || isFiniteNumber(max)) &&
+    (min === undefined || max === undefined || min <= max)
+  );
+}
+
+// 每种内容类型只能声明能从这种文件里读到的限制
+const MEDIA_FIELDS: Record<string, readonly string[]> = {
+  image: ["formats", "maxBytes", "width", "height", "aspectRatio", "pixels"],
+  video: ["formats", "maxBytes", "width", "height", "aspectRatio", "pixels", "fps", "duration", "totalDuration"],
+  audio: ["formats", "maxBytes", "duration", "totalDuration"],
+};
+
+function isMediaSpec(type: unknown, value: unknown): boolean {
+  const fields = typeof type === "string" ? MEDIA_FIELDS[type] : undefined;
+  if (!fields || !isRecord(value) || Object.keys(value).length === 0) return false;
+  return Object.entries(value).every(([key, item]) => {
+    if (!fields.includes(key)) return false;
+    if (key === "formats") {
+      return Array.isArray(item) && item.length > 0 && item.every((format) => typeof format === "string" && format);
+    }
+    if (key === "maxBytes") return isPositiveInteger(item);
+    return isRange(item);
+  });
+}
+
+function isContentInputSpec(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  const { requires, media } = value;
+  return (
+    (requires === undefined ||
+      (Array.isArray(requires) &&
+        requires.length > 0 &&
+        requires.every((type) => (GENERATION_CONTENT_TYPES as readonly unknown[]).includes(type)))) &&
+    (media === undefined || isMediaSpec(value.type, media))
+  );
+}
+
+function isContentInputs(value: unknown): boolean {
+  return isRecord(value) && Array.isArray(value.input) && value.input.every(isContentInputSpec);
+}
+
+// values 只用于数值参数，列出 min/max 范围之外另外允许的取值
+function isParameterValues(type: unknown, values: unknown): boolean {
+  if (values === undefined) return true;
+  if (type !== "number" && type !== "integer") return false;
+  return (
+    Array.isArray(values) &&
+    values.length > 0 &&
+    values.every((item) => isFiniteNumber(item) && (type === "number" || Number.isInteger(item)))
+  );
+}
+
 function isArrayItemSpec(value: unknown): boolean {
   if (!isRecord(value)) return false;
   if (value.type === "string") {
@@ -51,6 +115,7 @@ function isArrayItemSpec(value: unknown): boolean {
 
 function isParameterSpec(value: unknown): boolean {
   if (!isRecord(value)) return false;
+  if (!isParameterValues(value.type, value.values)) return false;
   if (value.type === "object") return true;
   if (value.type === "array") {
     return (
@@ -136,7 +201,7 @@ function isOperationSpec(value: unknown): boolean {
   return (
     (value.title === undefined || typeof value.title === "string") &&
     (value.description === undefined || typeof value.description === "string") &&
-    (value.content === undefined || (isRecord(value.content) && Array.isArray(value.content.input))) &&
+    (value.content === undefined || isContentInputs(value.content)) &&
     (value.parameters === undefined || isParameters(value.parameters))
   );
 }
@@ -186,8 +251,7 @@ function hasDeclarationFields(value: unknown): value is GenerationModelDeclarati
     (value.allowUnknownParameters === undefined || typeof value.allowUnknownParameters === "boolean") &&
     isRecord(adapter) &&
     typeof adapter.type === "string" &&
-    isRecord(content) &&
-    Array.isArray(content.input) &&
+    isContentInputs(content) &&
     (parameters === undefined || isParameters(parameters)) &&
     (operations === undefined || (isRecord(operations) && Object.values(operations).every(isOperationSpec))) &&
     (meta === undefined || isMetaSpec(meta)) &&

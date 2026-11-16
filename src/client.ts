@@ -12,6 +12,8 @@ import {
 } from "./config.js";
 import { GenerationConfigError } from "./errors.js";
 import { createDebugFetch, joinUrl } from "./http.js";
+import { validateGenerationMedia } from "./media.js";
+import { publicMediaFetch } from "./media-fetch.js";
 import {
   extractGenerationResultFields,
   extractGenerationResultHeaderFields,
@@ -173,6 +175,7 @@ export function createGenerationClient(options: CreateGenerationClientOptions = 
   if (!fetchFn) throw new GenerationConfigError("A fetch implementation is required");
   const debug = resolveDebugConfig(options.debug);
   const adapterFetch = debug ? createDebugFetch(fetchFn, debug) : fetchFn;
+  const mediaFetch = options.mediaFetch ?? publicMediaFetch;
   const systemOneConfig = {
     ...options.systemOne,
     baseURL: options.systemOne?.baseURL ?? joinUrl(options.baseUrl ?? DEFAULT_BASE_URL, "typesafe"),
@@ -218,6 +221,7 @@ export function createGenerationClient(options: CreateGenerationClientOptions = 
     const apiKey = request.apiKey ?? options.apiKey;
     if (!apiKey) throw new GenerationConfigError("apiKey is required");
     const adapter = getGenerationAdapter(resolved.declaration.adapter.type, options.adapters);
+    await validateGenerationMedia(resolved.declaration, resolved.request.content, mediaFetch);
     return adapter({
       ...resolved,
       context: {

@@ -71,11 +71,17 @@
   "dependencies": {
     "@openrouter/sdk": "1.4.25",
     "@typesafe-ai/sdk": "0.6.0",
+    "image-size": "^2.1.0",
+    "ipaddr.js": "^2.5.0",
+    "mp4box": "^2.5.0",
+    "music-metadata": "^11.16.1",
+    "undici": "^7.30.2",
     "yaml": "^2.8.3"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.1",
     "@types/node": "^22.10.0",
+    "sirv": "^3.0.2",
     "tsdown": "^0.15.0",
     "typescript": "^5.8.0",
     "vitest": "^3.2.0"

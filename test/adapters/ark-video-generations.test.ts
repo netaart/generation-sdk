@@ -1,7 +1,18 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createGenerationClient, type GenerationContentBlock, type GenerationProviderError } from "../../src/index.js";
+import { loopbackMediaFetch, type MediaServer, startMediaServer } from "../helpers/media-server.js";
 
 type FetchCall = { url: string; init: RequestInit };
+
+let media: MediaServer;
+beforeAll(async () => {
+  media = await startMediaServer();
+});
+afterAll(() => media.close());
+
+const image = (file = "image-640x360.jpg") => media.url(file);
+const video = (file = "video-854x480-24fps.mp4") => media.url(file);
+const audio = (file = "audio-5s.wav") => media.url(file);
 
 function textBlock(text: string): GenerationContentBlock {
   return { type: "text", text };
@@ -64,12 +75,18 @@ async function runSuccessfulVideoGeneration(
   };
 
   try {
-    const client = createGenerationClient({ apiKey: "key", fetch: fetchMock as typeof fetch });
+    const client = createGenerationClient({
+      apiKey: "key",
+      fetch: fetchMock as typeof fetch,
+      mediaFetch: loopbackMediaFetch,
+    });
     const promise = client.generate({
       model,
       content,
       parameters: { poll_interval: 1, max_wait: 30, ...parameters },
     });
+    // 素材检查读取本地服务器上的真实文件，等到创建任务之后再推进轮询计时
+    await vi.waitFor(() => expect(calls.length).toBeGreaterThan(0));
     await vi.advanceTimersByTimeAsync(1000);
     const output = await promise;
     return { calls, output };
@@ -151,16 +168,16 @@ describe("ark.videoGenerations adapter", () => {
   it("sends first and last frames as metadata media content without text blocks", async () => {
     const { calls } = await runSuccessfulVideoGeneration([
       textBlock("create a smooth cinematic transition"),
-      imageBlock("https://example.com/first.jpg", { role: "first_frame" }),
-      imageBlock("https://example.com/last.jpg", { role: "last_frame" }),
+      imageBlock(image(), { role: "first_frame" }),
+      imageBlock(image("image-640x360.png"), { role: "last_frame" }),
     ]);
     const body = parseCreateBody(calls);
     const metadata = body.metadata as Record<string, unknown>;
 
     expect(body.prompt).toBe("create a smooth cinematic transition");
     expect(metadata.content).toEqual([
-      { type: "image_url", image_url: { url: "https://example.com/first.jpg" }, role: "first_frame" },
-      { type: "image_url", image_url: { url: "https://example.com/last.jpg" }, role: "last_frame" },
+      { type: "image_url", image_url: { url: image() }, role: "first_frame" },
+      { type: "image_url", image_url: { url: image("image-640x360.png") }, role: "last_frame" },
     ]);
     expect((metadata.content as Array<{ type: string }>).some((item) => item.type === "text")).toBe(false);
     expect(metadata.resolution).toBe("720p");
@@ -170,18 +187,18 @@ describe("ark.videoGenerations adapter", () => {
   it("sends reference images and reference video as metadata media content", async () => {
     const { calls } = await runSuccessfulVideoGeneration([
       textBlock("keep the subject from the image and the motion rhythm from the video"),
-      imageBlock("https://example.com/subject.jpg", { role: "reference_image" }),
-      imageBlock("https://example.com/style.jpg", { role: "reference_image" }),
-      videoBlock("https://example.com/motion.mp4", { role: "reference_video" }),
+      imageBlock(image(), { role: "reference_image" }),
+      imageBlock(image("image-640x360.webp"), { role: "reference_image" }),
+      videoBlock(video(), { role: "reference_video" }),
     ]);
     const body = parseCreateBody(calls);
     const metadata = body.metadata as Record<string, unknown>;
 
     expect(body.prompt).toBe("keep the subject from the image and the motion rhythm from the video");
     expect(metadata.content).toEqual([
-      { type: "image_url", image_url: { url: "https://example.com/subject.jpg" }, role: "reference_image" },
-      { type: "image_url", image_url: { url: "https://example.com/style.jpg" }, role: "reference_image" },
-      { type: "video_url", video_url: { url: "https://example.com/motion.mp4" }, role: "reference_video" },
+      { type: "image_url", image_url: { url: image() }, role: "reference_image" },
+      { type: "image_url", image_url: { url: image("image-640x360.webp") }, role: "reference_image" },
+      { type: "video_url", video_url: { url: video() }, role: "reference_video" },
     ]);
     expect((metadata.content as Array<{ type: string }>).some((item) => item.type === "text")).toBe(false);
   });
@@ -189,60 +206,127 @@ describe("ark.videoGenerations adapter", () => {
   it("sends reference audio beside visual media as metadata audio_url", async () => {
     const { calls } = await runSuccessfulVideoGeneration([
       textBlock("keep the subject from the image and the rhythm from the audio"),
-      imageBlock("https://example.com/subject.jpg", { role: "reference_image" }),
-      audioBlock("https://example.com/reference.mp3", { role: "reference_audio" }),
+      imageBlock(image(), { role: "reference_image" }),
+      audioBlock(audio("audio-10s.mp3"), { role: "reference_audio" }),
     ]);
     const body = parseCreateBody(calls);
     const metadata = body.metadata as Record<string, unknown>;
 
     expect(body.image).toBeUndefined();
     expect(metadata.content).toEqual([
-      { type: "image_url", image_url: { url: "https://example.com/subject.jpg" }, role: "reference_image" },
-      { type: "audio_url", audio_url: { url: "https://example.com/reference.mp3" }, role: "reference_audio" },
-    ]);
-  });
-
-  it("sends reference audio with first and last frames", async () => {
-    const { calls } = await runSuccessfulVideoGeneration([
-      textBlock("create a smooth cinematic transition with this soundtrack"),
-      imageBlock("https://example.com/first.jpg", { role: "first_frame" }),
-      imageBlock("https://example.com/last.jpg", { role: "last_frame" }),
-      audioBlock("https://example.com/reference.mp3", { role: "reference_audio" }),
-    ]);
-    const body = parseCreateBody(calls);
-    const metadata = body.metadata as Record<string, unknown>;
-
-    expect(metadata.content).toEqual([
-      { type: "image_url", image_url: { url: "https://example.com/first.jpg" }, role: "first_frame" },
-      { type: "image_url", image_url: { url: "https://example.com/last.jpg" }, role: "last_frame" },
-      { type: "audio_url", audio_url: { url: "https://example.com/reference.mp3" }, role: "reference_audio" },
+      { type: "image_url", image_url: { url: image() }, role: "reference_image" },
+      { type: "audio_url", audio_url: { url: audio("audio-10s.mp3") }, role: "reference_audio" },
     ]);
   });
 
   it("puts a plain image into metadata content when reference audio is present", async () => {
     const { calls } = await runSuccessfulVideoGeneration([
       textBlock("animate this still with the provided soundtrack"),
-      imageBlock("https://example.com/plain.jpg"),
-      audioBlock("https://example.com/reference.mp3", { role: "reference_audio" }),
+      imageBlock(image()),
+      audioBlock(audio(), { role: "reference_audio" }),
     ]);
     const body = parseCreateBody(calls);
     const metadata = body.metadata as Record<string, unknown>;
 
     expect(body.image).toBeUndefined();
     expect(metadata.content).toEqual([
-      { type: "image_url", image_url: { url: "https://example.com/plain.jpg" } },
-      { type: "audio_url", audio_url: { url: "https://example.com/reference.mp3" }, role: "reference_audio" },
+      { type: "image_url", image_url: { url: image() } },
+      { type: "audio_url", audio_url: { url: audio() }, role: "reference_audio" },
     ]);
   });
 
-  it("rejects audio-only Seedance requests before resolving sources", async () => {
+  it("sends Seedance 2.5 reference audio without visual media", async () => {
+    const { calls } = await runSuccessfulVideoGeneration(
+      [textBlock("a dance that follows this beat"), audioBlock(audio(), { role: "reference_audio" })],
+      {},
+      "seedance-2-5",
+    );
+    const metadata = parseCreateBody(calls).metadata as Record<string, unknown>;
+    expect(metadata.content).toEqual([{ type: "audio_url", audio_url: { url: audio() }, role: "reference_audio" }]);
+  });
+
+  it("rejects audio-only Seedance 2.0 requests before resolving sources", async () => {
     await expectVideoGenerationValidationError(
       [
         textBlock("this has audio but no visual reference"),
         audioBlock("https://example.com/reference.mp3", { role: "reference_audio" }),
       ],
-      "Seedance audio input requires at least one image or video",
+      "seedance-2-0-fast audio input requires at least one image or video content block",
     );
+  });
+
+  it("rejects reference audio with first and last frames before resolving sources", async () => {
+    await expectVideoGenerationValidationError(
+      [
+        textBlock("create a smooth cinematic transition with this soundtrack"),
+        imageBlock("https://example.com/first.jpg", { role: "first_frame" }),
+        imageBlock("https://example.com/last.jpg", { role: "last_frame" }),
+        audioBlock("https://example.com/reference.mp3", { role: "reference_audio" }),
+      ],
+      "Seedance does not accept reference_audio with first_frame/last_frame",
+    );
+  });
+
+  it("rejects a last frame without a first frame before resolving sources", async () => {
+    await expectVideoGenerationValidationError(
+      [textBlock("end on this frame"), imageBlock("https://example.com/last.jpg", { role: "last_frame" })],
+      "A last_frame image needs a first_frame image in the same request",
+    );
+  });
+
+  it("rejects a second reference video on Seedance 2.0 before resolving sources", async () => {
+    await expectVideoGenerationValidationError(
+      [
+        textBlock("combine the motion of both clips"),
+        videoBlock("https://example.com/a.mp4", { role: "reference_video" }),
+        videoBlock("https://example.com/b.mp4", { role: "reference_video" }),
+      ],
+      "Expected at most 1 video content block(s)",
+    );
+  });
+
+  it("sends several reference videos to Seedance 2.5", async () => {
+    const { calls } = await runSuccessfulVideoGeneration(
+      [
+        textBlock("combine the motion of both clips"),
+        videoBlock(video(), { role: "reference_video" }),
+        videoBlock(video("video-854x480-23.976fps-moov-end.mp4"), { role: "reference_video" }),
+      ],
+      {},
+      "seedance-2-5",
+    );
+    const metadata = parseCreateBody(calls).metadata as Record<string, unknown>;
+    expect(metadata.content).toEqual([
+      { type: "video_url", video_url: { url: video() }, role: "reference_video" },
+      {
+        type: "video_url",
+        video_url: { url: video("video-854x480-23.976fps-moov-end.mp4") },
+        role: "reference_video",
+      },
+    ]);
+  });
+
+  it("accepts duration -1 and rejects durations below 4", async () => {
+    const { calls } = await runSuccessfulVideoGeneration([textBlock("a slow push in")], { duration: -1 });
+    expect(parseCreateBody(calls).duration).toBe(-1);
+
+    const client = createGenerationClient({ apiKey: "key" });
+    for (const duration of [0, 3, -2]) {
+      expect(() =>
+        client.validate({
+          model: "seedance-2-0-fast",
+          content: [textBlock("a slow push in")],
+          parameters: { duration },
+        }),
+      ).toThrow("Parameter duration must be >= 4 or one of: -1");
+    }
+    expect(() =>
+      client.validate({
+        model: "seedance-2-0-fast",
+        content: [textBlock("a slow push in")],
+        parameters: { duration: 16 },
+      }),
+    ).toThrow("Parameter duration must be <= 15 or one of: -1");
   });
 
   it("rejects mixed frame and reference media before resolving sources", async () => {
@@ -393,9 +477,18 @@ describe("ark.videoGenerations adapter", () => {
     ).rejects.toThrow('Seedance 2.5 first/last-frame tasks require ratio=adaptive, got "9:16"');
   });
 
+  it("keeps a fixed ratio for Seedance 2.0 first-frame tasks", async () => {
+    const { calls } = await runSuccessfulVideoGeneration(
+      [textBlock("animate the still"), imageBlock(image(), { role: "first_frame" })],
+      { ratio: "9:16" },
+    );
+    const metadata = parseCreateBody(calls).metadata as Record<string, unknown>;
+    expect(metadata.ratio).toBe("9:16");
+  });
+
   it("defaults Seedance 2.5 first-frame ratio to adaptive", async () => {
     const { calls } = await runSuccessfulVideoGeneration(
-      [textBlock("animate the still"), imageBlock("https://example.com/first.jpg", { role: "first_frame" })],
+      [textBlock("animate the still"), imageBlock(image(), { role: "first_frame" })],
       {},
       "seedance-2-5",
     );
@@ -411,26 +504,5 @@ describe("ark.videoGenerations adapter", () => {
     );
     const metadata = parseCreateBody(calls).metadata as Record<string, unknown>;
     expect(metadata.ratio).toBe("9:16");
-  });
-
-  it("rejects Seedance 2.5 edit tasks that set a fixed ratio", async () => {
-    const client = createGenerationClient({
-      apiKey: "key",
-      fetch: async () => {
-        throw new Error("fetch should not be called");
-      },
-    });
-
-    await expect(
-      client.generate({
-        model: "seedance-2-5",
-        content: [
-          textBlock("turn the clip into night rain"),
-          videoBlock("https://example.com/source.mp4", { role: "reference_video" }),
-        ],
-        parameters: { duration: 5, ratio: "16:9" },
-        meta: { omni_reference_task_type: "edit" },
-      }),
-    ).rejects.toThrow('Seedance 2.5 edit tasks require ratio=adaptive, got "16:9"');
   });
 });
