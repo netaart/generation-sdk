@@ -1,7 +1,13 @@
 import { GenerationProviderError, GenerationTimeoutError, GenerationValidationError } from "../errors.js";
 import { fetchWithTimeout, joinUrl } from "../http.js";
 import { taskPollTicks } from "../task-poll.js";
-import type { GenerationAdapterInput, GenerationContentBlock, GenerationSource } from "../types.js";
+import type {
+  GenerationAdapterInput,
+  GenerationContentBlock,
+  GenerationSource,
+  GenerationSourceResolver,
+  ResolvedGenerationRequest,
+} from "../types.js";
 import { compactObject, getBlockMeta } from "../utils.js";
 import { mergeTextBlocks } from "../validation.js";
 
@@ -66,7 +72,7 @@ function getMediaRole(block: GenerationContentBlock): string | undefined {
   return typeof role === "string" && role.trim() ? role.trim() : undefined;
 }
 
-function getH3InputMedia(input: GenerationAdapterInput): H3InputMedia[] {
+function getH3InputMedia(input: ResolvedGenerationRequest): H3InputMedia[] {
   return input.request.content
     .filter(
       (block): block is Extract<GenerationContentBlock, { type: "image" | "video" | "audio" }> =>
@@ -132,12 +138,15 @@ function classifyMedia(media: H3InputMedia[]): H3Mode {
   return "text";
 }
 
-async function resolveMedia(input: GenerationAdapterInput, media: H3InputMedia[]): Promise<H3ResolvedMedia[]> {
+async function resolveMedia(
+  resolveSource: GenerationSourceResolver,
+  media: H3InputMedia[],
+): Promise<H3ResolvedMedia[]> {
   return Promise.all(
     media.map(async (item) => ({
       kind: item.kind,
       role: item.role as string,
-      url: await input.context.resolveSource(item.source),
+      url: await resolveSource(item.source),
     })),
   );
 }
@@ -253,29 +262,31 @@ async function requestJson(input: GenerationAdapterInput, path: string, init: Re
   return parsed;
 }
 
-export async function minimaxH3VideoGenerationsAdapter(
-  input: GenerationAdapterInput,
-): Promise<GenerationContentBlock[]> {
+export async function buildH3CreatePayload(input: ResolvedGenerationRequest, resolveSource: GenerationSourceResolver) {
   const prompt = mergeTextBlocks(input.declaration, input.request.content);
   if (!prompt) throw new GenerationValidationError("Prompt text is required");
 
   const inputMedia = getH3InputMedia(input);
   const mode = classifyMedia(inputMedia);
-  const media = await resolveMedia(input, inputMedia);
-  const duration = resolveDuration(input.parameters.duration);
-  const resolution = resolveResolution(input.parameters.resolution);
-  const ratio = resolveRatio(input.parameters.ratio, mode);
-  const pollIntervalSec = Math.max(1, asInteger(input.parameters.poll_interval, DEFAULT_POLL_INTERVAL_SEC));
-  const maxWaitSec = Math.max(30, asInteger(input.parameters.max_wait, DEFAULT_MAX_WAIT_SEC));
-  const aigcWatermark = asBoolean(input.parameters.aigc_watermark, false);
-  const payload = {
+  const media = await resolveMedia(resolveSource, inputMedia);
+  const enabled = input.meta.context_ir_enabled;
+  return {
     model: input.declaration.model,
     content: buildContent(prompt, media),
-    resolution,
-    duration,
-    ratio,
-    aigc_watermark: aigcWatermark,
+    resolution: resolveResolution(input.parameters.resolution),
+    duration: resolveDuration(input.parameters.duration),
+    ratio: resolveRatio(input.parameters.ratio, mode),
+    aigc_watermark: asBoolean(input.parameters.aigc_watermark, false),
+    ...(enabled === undefined ? {} : { metadata: { context_ir_enabled: enabled } }),
   };
+}
+
+export async function minimaxH3VideoGenerationsAdapter(
+  input: GenerationAdapterInput,
+): Promise<GenerationContentBlock[]> {
+  const payload = await buildH3CreatePayload(input, input.context.resolveSource);
+  const pollIntervalSec = Math.max(1, asInteger(input.parameters.poll_interval, DEFAULT_POLL_INTERVAL_SEC));
+  const maxWaitSec = Math.max(30, asInteger(input.parameters.max_wait, DEFAULT_MAX_WAIT_SEC));
 
   const task = (await requestJson(input, "/v1/video/generations", {
     method: "POST",
