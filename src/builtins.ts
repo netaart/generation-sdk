@@ -230,6 +230,16 @@ const minimaxH3ContentInput = [
   },
 ] satisfies GenerationModelDeclaration["content"]["input"];
 
+const minimaxH3Meta = {
+  fields: {
+    context_ir_enabled: {
+      type: "boolean",
+      optional: true,
+      description: "Enable or disable prompt rewriting for self-hosted H3. Omit to use the server default.",
+    },
+  },
+} satisfies GenerationModelDeclaration["meta"];
+
 const minimaxH3VideoCommonParameters = {
   duration: {
     type: "integer",
@@ -2103,6 +2113,7 @@ const builtinModels = [
     adapter: { type: "minimax.h3VideoGenerations" },
     content: { input: minimaxH3ContentInput },
     parameters: minimaxH3VideoParameters(),
+    meta: minimaxH3Meta,
     examples: [
       {
         title: "Text to video",
@@ -2123,6 +2134,7 @@ const builtinModels = [
     adapter: { type: "minimax.h3VideoGenerations" },
     content: { input: minimaxH3ContentInput },
     parameters: minimaxH3VideoParameters(),
+    meta: minimaxH3Meta,
     examples: [
       {
         title: "Custom resolution",

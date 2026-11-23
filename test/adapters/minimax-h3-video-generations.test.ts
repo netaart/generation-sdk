@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
+import { buildH3CreatePayload } from "../../src/adapters/minimax-h3-video-generations.js";
 import {
   createGenerationClient,
   type GenerationContentBlock,
   type GenerationModelDeclaration,
 } from "../../src/index.js";
+import { defaultGenerationSourceResolver } from "../../src/source.js";
 
 type FetchCall = { url: string; init: RequestInit };
 
@@ -117,6 +119,23 @@ async function runSuccessfulGeneration(
 }
 
 describe("minimax.h3VideoGenerations adapter", () => {
+  it.each(["minimax-h3", "minimax-h3-unrestricted"])("maps Context-IR metadata for %s", async (model) => {
+    const client = createGenerationClient();
+    const request = { model, content: [textBlock("雨中的街道")] };
+    const payload = (meta: Record<string, unknown>) =>
+      buildH3CreatePayload(client.validate({ ...request, meta }), defaultGenerationSourceResolver);
+
+    expect(await payload({})).not.toHaveProperty("metadata");
+    for (const enabled of [false, true]) {
+      expect((await payload({ context_ir_enabled: enabled, other: 1 })).metadata).toEqual({
+        context_ir_enabled: enabled,
+      });
+    }
+    expect(() => client.validate({ ...request, meta: { context_ir_enabled: "false" } })).toThrow(
+      /meta\.context_ir_enabled/,
+    );
+  });
+
   it("submits official H3 fields and polls the NewAPI task envelope", async () => {
     const { calls, output } = await runSuccessfulGeneration([textBlock("a red cube rotating on a white table")]);
     const body = parseCreateBody(calls);

@@ -78,6 +78,12 @@ parameters:
     optional: true
     default: 768P
     description: Output video resolution or an explicit WIDTHxHEIGHT canvas.
+meta:
+  fields:
+    context_ir_enabled:
+      type: boolean
+      optional: true
+      description: Enable or disable prompt rewriting for self-hosted H3. Omit to use the server default.
 examples:
   - title: Text to video
     request:
